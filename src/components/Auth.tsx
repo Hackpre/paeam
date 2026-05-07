@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, AlertCircle, User, Phone, Fingerprint } from 'lucide-react';
 
-export default function Auth() {
-  const navigate = useNavigate();
+interface AuthProps {
+  onSuccess?: () => void;
+}
+
+export default function Auth({ onSuccess }: AuthProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,8 +19,6 @@ export default function Auth() {
   const [nationalId, setNationalId] = useState('');
   const [ipiNumber, setIpiNumber] = useState('');
   const [showIpiInfo, setShowIpiInfo] = useState(false);
-  
-  const [showPayment, setShowPayment] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,32 +32,34 @@ export default function Auth() {
         return;
       }
       
-      const userData = { fullName, stageName, email, phone, nationalId, ipiNumber, password };
-      localStorage.setItem('paeam_user', JSON.stringify(userData));
-      setShowPayment(true);
+      // Store user data
+      localStorage.setItem('paeam_user', JSON.stringify({ fullName, stageName, phone, nationalId, ipiNumber, email }));
+      localStorage.setItem('paeam_paid', 'false');
+      localStorage.setItem('paeam_logged_in', 'true');
+      
+      if (onSuccess) {
+        onSuccess();
+      }
       setLoading(false);
       return;
     }
 
+    // Login
     const savedUser = localStorage.getItem('paeam_user');
     if (savedUser) {
       const user = JSON.parse(savedUser);
-      if (user.email === email && user.password === password) {
+      if (user.email === email) {
         localStorage.setItem('paeam_logged_in', 'true');
-        navigate('/dashboard');
+        if (onSuccess) {
+          onSuccess();
+        }
       } else {
-        setError('Invalid email or password');
+        setError('Invalid email');
       }
     } else {
       setError('No account found. Please register first.');
     }
     setLoading(false);
-  };
-
-  const handlePaymentLater = () => {
-    setShowPayment(false);
-    localStorage.setItem('paeam_paid', 'false');
-    navigate('/dashboard');
   };
 
   return (
@@ -87,7 +89,6 @@ export default function Auth() {
                 <input type="text" value={ipiNumber} onChange={(e) => setIpiNumber(e.target.value)} placeholder="IPI Number" className="w-full px-4 py-2.5 bg-neutral-800 border border-neutral-700 rounded-xl text-white" />
                 <div className="p-3 bg-gold-500/10 rounded-xl">
                   <p className="text-gold-500 text-sm font-semibold">Annual Membership Fee: 15,000 MWK</p>
-                  <p className="text-neutral-400 text-xs">Pay via PayChangu (Airtel Money, MPamba, National Bank)</p>
                 </div>
               </>
             )}
@@ -102,20 +103,6 @@ export default function Auth() {
           </form>
         </div>
       </div>
-
-      {/* Payment Modal */}
-      {showPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
-          <div className="bg-neutral-900 rounded-2xl p-6 max-w-md w-full text-center">
-            <h2 className="text-2xl font-bold text-white mb-2">Membership Fee: 15,000 MWK</h2>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => navigate('/payment')} className="flex-1 py-3 bg-gold-600 text-black font-semibold rounded-xl">Pay Now</button>
-              <button onClick={handlePaymentLater} className="flex-1 py-3 bg-neutral-800 text-white font-semibold rounded-xl">Pay Later</button>
-            </div>
-            <button onClick={() => setShowPayment(false)} className="w-full py-2 text-neutral-400 mt-3">Cancel</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
