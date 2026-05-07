@@ -3,7 +3,11 @@ import { useNavigate } from 'react-router-dom';
 
 const PAYCHANGU_SECRET_KEY = "SEC-TEST-esDPROlaHslxXyTnc3AqkdiFI3Yt8uH";
 
-export default function Payment() {
+interface PaymentProps {
+  onComplete?: () => void;
+}
+
+export default function Payment({ onComplete }: PaymentProps) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +61,15 @@ export default function Payment() {
     }
   };
 
+  const handlePayLater = () => {
+    localStorage.setItem('paeam_paid', 'false');
+    if (onComplete) {
+      onComplete();
+    } else {
+      navigate('/dashboard');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4">
       <div className="bg-neutral-900 rounded-2xl p-8 max-w-md w-full text-center border border-neutral-800">
@@ -75,7 +88,7 @@ export default function Payment() {
         
         <div className="bg-neutral-800 rounded-xl p-4 mb-6">
           <p className="text-neutral-300 text-sm">You will be redirected to PayChangu to complete your payment.</p>
-          <p className="text-neutral-500 text-xs mt-2">Supported: Airtel Money, Mpamba, National Bank</p>
+          <p className="text-neutral-500 text-xs mt-2">Supported: Airtel Money, MPamba, National Bank</p>
         </div>
         
         <button 
@@ -87,10 +100,10 @@ export default function Payment() {
         </button>
         
         <button 
-          onClick={() => navigate('/dashboard')}
+          onClick={handlePayLater}
           className="w-full py-2 text-neutral-500 mt-3 hover:text-neutral-400 transition-colors"
         >
-          Back to Dashboard
+          Pay Later
         </button>
       </div>
     </div>
