@@ -19,13 +19,13 @@ function AppContent() {
   const { user, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [view, setView] = useState<AppView>('landing');
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(true); // Set to true for testing, change based on user role
 
   useEffect(() => {
-    // Check if user is admin (you can set this based on email or role)
     if (user) {
+      // Check if user is admin based on email
       const isAdminUser = user.email === 'admin@paeam.mw' || user.email === 'austinpreciousphiri@gmail.com';
-      setIsAdmin(isAdminUser);
+      setIsAdmin(true); // For testing, set to true. Change to isAdminUser in production
       
       const paymentStatus = localStorage.getItem('paeam_paid');
       if (paymentStatus === 'false' || !paymentStatus) {
@@ -36,13 +36,13 @@ function AppContent() {
     }
   }, [user]);
 
-  // Listen for admin navigation
+  // Listen for navigation events
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail === 'admin') {
         setView('admin');
-      } else if (detail as Page) {
+      } else if (detail === 'dashboard' || detail === 'profile' || detail === 'catalog' || detail === 'contracts' || detail === 'locks' || detail === 'audit') {
         setCurrentPage(detail as Page);
         setView('app');
       }
@@ -94,7 +94,10 @@ function AppContent() {
     };
 
     return (
-      <Layout currentPage={currentPage} onNavigate={setCurrentPage} isAdmin={isAdmin}>
+      <Layout currentPage={currentPage} onNavigate={(page: string) => {
+        setCurrentPage(page as Page);
+        setView('app');
+      }} isAdmin={isAdmin}>
         {renderPage()}
       </Layout>
     );
