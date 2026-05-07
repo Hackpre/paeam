@@ -6,11 +6,9 @@ interface PaymentProps {
 
 export default function Payment({ onComplete }: PaymentProps) {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handlePayment = () => {
     setLoading(true);
-    // Simulate payment success for demo
     setTimeout(() => {
       localStorage.setItem('paeam_paid', 'true');
       onComplete();
@@ -31,12 +29,6 @@ export default function Payment({ onComplete }: PaymentProps) {
         <h1 className="text-2xl font-bold text-white mb-2">Complete Your Payment</h1>
         <p className="text-4xl font-bold text-gold-500 mb-2">15,000 MWK</p>
         <p className="text-neutral-400 text-sm mb-6">Annual Membership Fee</p>
-        
-        {error && <div className="mb-4 p-3 bg-red-500/10 text-red-400 text-sm rounded-lg">{error}</div>}
-        
-        <div className="bg-neutral-800 rounded-xl p-4 mb-6">
-          <p className="text-neutral-300 text-sm">Demo Mode: Click "Pay Now" to simulate payment</p>
-        </div>
         
         <button 
           onClick={handlePayment} 
