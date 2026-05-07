@@ -195,4 +195,11 @@ export default function LockApprovals() {
       </div>
 
       {/* Footer */}
-      <div className="text-center text-neutral-500 text-xs pt-4 border-t border-neutral
+      <div className="text-center text-neutral-500 text-xs pt-4 border-t border-neutral-800">
+        <p>Producers & Audio Engineering Association of Malawi — Official Digital Registry</p>
+        <p className="mt-1">Secure Rights Management | Immutable Record Keeping | Three-Way Lock Protection</p>
+        <p className="mt-2">© 2026 PAEAM. All rights reserved. Built for the music producers of Malawi.</p>
+      </div>
+    </div>
+  );
+}
