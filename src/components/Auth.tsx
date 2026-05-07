@@ -33,9 +33,9 @@ export default function Auth({ onSuccess }: AuthProps) {
       }
       
       // Store user data
-      localStorage.setItem('paeam_user', JSON.stringify({ fullName, stageName, phone, nationalId, ipiNumber, email }));
+      const userData = { fullName, stageName, phone, nationalId, ipiNumber, email, password };
+      localStorage.setItem('paeam_user', JSON.stringify(userData));
       localStorage.setItem('paeam_paid', 'false');
-      localStorage.setItem('paeam_logged_in', 'true');
       
       if (onSuccess) {
         onSuccess();
