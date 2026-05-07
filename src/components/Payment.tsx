@@ -1,14 +1,12 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 const PAYCHANGU_SECRET_KEY = "SEC-TEST-esDPROlaHslxXyTnc3AqkdiFI3Yt8uH";
 
 interface PaymentProps {
-  onComplete?: () => void;
+  onComplete: () => void;
 }
 
 export default function Payment({ onComplete }: PaymentProps) {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,16 +14,9 @@ export default function Payment({ onComplete }: PaymentProps) {
     setLoading(true);
     setError(null);
     
+    const user = JSON.parse(localStorage.getItem('paeam_user') || '{}');
+    
     try {
-      const userStr = localStorage.getItem('paeam_user');
-      const user = userStr ? JSON.parse(userStr) : null;
-      
-      if (!user) {
-        setError('User not found. Please register again.');
-        setLoading(false);
-        return;
-      }
-
       const response = await fetch('https://api.paychangu.com/payment', {
         method: 'POST',
         headers: {
@@ -51,11 +42,10 @@ export default function Payment({ onComplete }: PaymentProps) {
         localStorage.setItem('paeam_paid', 'true');
         window.location.href = data.payment_url;
       } else {
-        setError(data.message || 'Payment failed. Please try again.');
+        setError(data.message || 'Payment failed');
       }
     } catch (err) {
-      console.error('Payment error:', err);
-      setError('Network error. Please check your connection and try again.');
+      setError('Network error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -63,11 +53,7 @@ export default function Payment({ onComplete }: PaymentProps) {
 
   const handlePayLater = () => {
     localStorage.setItem('paeam_paid', 'false');
-    if (onComplete) {
-      onComplete();
-    } else {
-      navigate('/dashboard');
-    }
+    onComplete();
   };
 
   return (
@@ -78,33 +64,13 @@ export default function Payment({ onComplete }: PaymentProps) {
         </div>
         <h1 className="text-2xl font-bold text-white mb-2">Complete Your Payment</h1>
         <p className="text-4xl font-bold text-gold-500 mb-2">15,000 MWK</p>
-        <p className="text-neutral-400 text-sm mb-6">Annual Membership Fee</p>
         
-        {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-            {error}
-          </div>
-        )}
+        {error && <div className="mb-4 p-3 bg-red-500/10 text-red-400 text-sm rounded-lg">{error}</div>}
         
-        <div className="bg-neutral-800 rounded-xl p-4 mb-6">
-          <p className="text-neutral-300 text-sm">You will be redirected to PayChangu to complete your payment.</p>
-          <p className="text-neutral-500 text-xs mt-2">Supported: Airtel Money, MPamba, National Bank</p>
-        </div>
-        
-        <button 
-          onClick={handlePayment} 
-          disabled={loading}
-          className="w-full py-3 bg-gold-600 hover:bg-gold-500 text-black font-semibold rounded-xl transition-colors disabled:opacity-50"
-        >
+        <button onClick={handlePayment} disabled={loading} className="w-full py-3 bg-gold-600 text-black font-semibold rounded-xl mb-3">
           {loading ? 'Processing...' : 'Pay Now'}
         </button>
-        
-        <button 
-          onClick={handlePayLater}
-          className="w-full py-2 text-neutral-500 mt-3 hover:text-neutral-400 transition-colors"
-        >
-          Pay Later
-        </button>
+        <button onClick={handlePayLater} className="w-full py-2 text-neutral-500 rounded-xl">Pay Later</button>
       </div>
     </div>
   );
