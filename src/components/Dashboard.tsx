@@ -12,6 +12,8 @@ import {
   Clock,
   CheckCircle2,
   AlertTriangle,
+  CreditCard,
+  AlertCircle,
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -23,10 +25,23 @@ export default function Dashboard() {
   const [pendingLocks, setPendingLocks] = useState<LockApproval[]>([]);
   const [recentCatalog, setRecentCatalog] = useState<CatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'pending' | null>(null);
+  const [pendingSongsCount, setPendingSongsCount] = useState(0);
 
   useEffect(() => {
     async function load() {
       if (!user) return;
+
+      // Get user payment status from your database
+      const { data: userData } = await supabase
+        .from('users')
+        .select('payment_status')
+        .eq('id', user.id)
+        .single();
+      
+      if (userData) {
+        setPaymentStatus(userData.payment_status || 'pending');
+      }
 
       const { data: prof } = await supabase
         .from('producer_profiles')
@@ -36,11 +51,20 @@ export default function Dashboard() {
       setProfile(prof);
 
       if (prof) {
+        // Get catalog count
         const { count: cCount } = await supabase
           .from('catalog_entries')
           .select('*', { count: 'exact', head: true })
           .eq('producer_id', prof.id);
         setCatalogCount(cCount ?? 0);
+
+        // Get pending approval count
+        const { count: pCount } = await supabase
+          .from('catalog_entries')
+          .select('*', { count: 'exact', head: true })
+          .eq('producer_id', prof.id)
+          .eq('approval_status', 'pending');
+        setPendingSongsCount(pCount ?? 0);
 
         const { data: catalogData } = await supabase
           .from('catalog_entries')
@@ -76,6 +100,10 @@ export default function Dashboard() {
     load();
   }, [user]);
 
+  const handleInitiatePayment = () => {
+    window.location.href = '/payment';
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -109,7 +137,7 @@ export default function Dashboard() {
     { label: 'Catalog Entries', value: catalogCount, icon: <Disc3 size={20} />, color: 'gold' },
     { label: 'Contracts', value: contractCount, icon: <FileText size={20} />, color: 'blue' },
     { label: 'Locked Records', value: lockedCount, icon: <Lock size={20} />, color: 'amber' },
-    { label: 'Pending Approvals', value: pendingLocks.length, icon: <Clock size={20} />, color: 'rose' },
+    { label: 'Pending Approval', value: pendingSongsCount, icon: <Clock size={20} />, color: 'rose' },
   ];
 
   const colorMap: Record<string, string> = {
@@ -121,15 +149,46 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Welcome */}
+      {/* Payment Status Banner */}
+      {paymentStatus === 'pending' && (
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle size={24} className="text-yellow-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-yellow-500 font-semibold">⚠️ Payment Pending</p>
+              <p className="text-neutral-400 text-sm">Your membership fee of 15,000 MWK is pending. You can still use the system, but your songs and contracts will require admin approval.</p>
+            </div>
+          </div>
+          <button 
+            onClick={handleInitiatePayment}
+            className="px-4 py-2 bg-gold-600 hover:bg-gold-500 text-black font-semibold rounded-lg text-sm whitespace-nowrap"
+          >
+            Complete Payment
+          </button>
+        </div>
+      )}
+
+      {paymentStatus === 'paid' && (
+        <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 size={24} className="text-green-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-green-500 font-semibold">✓ Payment Confirmed</p>
+              <p className="text-neutral-400 text-sm">Your membership is active. All your content is automatically approved.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Welcome Section */}
       <div className="bg-gradient-to-r from-neutral-900 to-neutral-800 border border-neutral-700 rounded-2xl p-6">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-xl font-bold text-neutral-950">
-            {profile.stage_name.charAt(0).toUpperCase()}
+            {profile.stage_name?.charAt(0).toUpperCase() || 'P'}
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-white">{profile.stage_name}</h2>
-            <div className="flex items-center gap-2 mt-1">
+            <h2 className="text-2xl font-bold text-white">{profile.stage_name || profile.full_name}</h2>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               {profile.association_verification_status === 'verified' ? (
                 <span className="inline-flex items-center gap-1 text-xs font-medium text-gold-400 bg-gold-500/10 px-2 py-0.5 rounded-full">
                   <CheckCircle2 size={12} /> Verified Producer
@@ -139,12 +198,22 @@ export default function Dashboard() {
                   <Clock size={12} /> Pending Verification
                 </span>
               )}
+              {paymentStatus === 'pending' && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                  <CreditCard size={12} /> Payment Pending
+                </span>
+              )}
+              {paymentStatus === 'paid' && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">
+                  <CheckCircle2 size={12} /> Active Member
+                </span>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
           <div
@@ -185,7 +254,7 @@ export default function Dashboard() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-white truncate">{entry.song_title}</p>
-                  <p className="text-xs text-neutral-500">{entry.artist_names.join(', ') || 'No artist'}</p>
+                  <p className="text-xs text-neutral-500">{entry.artist_names?.join(', ') || 'No artist'}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   {entry.is_locked ? (
