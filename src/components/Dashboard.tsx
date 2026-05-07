@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../lib/auth';
+import { useNavigate } from 'react-router-dom';
 import {
   Disc3,
   FileText,
@@ -15,18 +15,15 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [catalogCount, setCatalogCount] = useState(0);
-  const [contractCount, setContractCount] = useState(0);
-  const [lockedCount, setLockedCount] = useState(0);
   const [pendingSongsCount, setPendingSongsCount] = useState(0);
   const [recentCatalog, setRecentCatalog] = useState<any[]>([]);
   const [paymentStatus, setPaymentStatus] = useState<'paid' | 'pending' | null>('pending');
   const [profile, setProfile] = useState<any>(null);
 
   useEffect(() => {
-    // Load data from localStorage
     const storedUser = localStorage.getItem('paeam_user');
     const storedPaid = localStorage.getItem('paeam_paid');
     
@@ -36,8 +33,6 @@ export default function Dashboard() {
     
     if (storedPaid === 'true') {
       setPaymentStatus('paid');
-    } else {
-      setPaymentStatus('pending');
     }
     
     const songs = JSON.parse(localStorage.getItem('paeam_songs') || '[]');
@@ -46,12 +41,26 @@ export default function Dashboard() {
     setCatalogCount(songs.length);
     setPendingSongsCount(pending);
     setRecentCatalog(songs.slice(0, 5));
-    
     setLoading(false);
   }, []);
 
-  const handleInitiatePayment = () => {
-    window.location.href = '/payment';
+  const handleAddSong = () => {
+    const title = prompt('Enter song title:');
+    if (title) {
+      const newSong = {
+        id: Date.now(),
+        title,
+        status: paymentStatus === 'paid' ? 'approved' : 'pending_approval',
+        createdAt: new Date().toISOString(),
+      };
+      const songs = JSON.parse(localStorage.getItem('paeam_songs') || '[]');
+      songs.push(newSong);
+      localStorage.setItem('paeam_songs', JSON.stringify(songs));
+      setCatalogCount(songs.length);
+      setPendingSongsCount(songs.filter((s: any) => s.status === 'pending_approval').length);
+      setRecentCatalog(songs.slice(0, 5));
+      alert(paymentStatus === 'paid' ? 'Song added!' : 'Song submitted for approval.');
+    }
   };
 
   if (loading) {
@@ -64,8 +73,8 @@ export default function Dashboard() {
 
   const stats = [
     { label: 'Catalog Entries', value: catalogCount, icon: <Disc3 size={20} />, color: 'gold' },
-    { label: 'Contracts', value: contractCount, icon: <FileText size={20} />, color: 'blue' },
-    { label: 'Locked Records', value: lockedCount, icon: <Lock size={20} />, color: 'amber' },
+    { label: 'Contracts', value: 0, icon: <FileText size={20} />, color: 'blue' },
+    { label: 'Locked Records', value: 0, icon: <Lock size={20} />, color: 'amber' },
     { label: 'Pending Approval', value: pendingSongsCount, icon: <Clock size={20} />, color: 'rose' },
   ];
 
@@ -78,7 +87,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Payment Status Banner */}
       {paymentStatus === 'pending' && (
         <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex items-start gap-3">
@@ -88,12 +96,7 @@ export default function Dashboard() {
               <p className="text-neutral-400 text-sm">Your membership fee of 15,000 MWK is pending.</p>
             </div>
           </div>
-          <button 
-            onClick={handleInitiatePayment}
-            className="px-4 py-2 bg-gold-600 hover:bg-gold-500 text-black font-semibold rounded-lg text-sm"
-          >
-            Complete Payment
-          </button>
+          <button onClick={() => navigate('/payment')} className="px-4 py-2 bg-gold-600 hover:bg-gold-500 text-black font-semibold rounded-lg text-sm">Complete Payment</button>
         </div>
       )}
 
@@ -109,7 +112,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Welcome Section */}
       <div className="bg-gradient-to-r from-neutral-900 to-neutral-800 border border-neutral-700 rounded-2xl p-6">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-xl font-bold text-neutral-950">
@@ -133,7 +135,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
           <div key={stat.label} className={`bg-gradient-to-br ${colorMap[stat.color]} border rounded-2xl p-4`}>
@@ -146,11 +147,27 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Recent Catalog */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-white">Quick Actions</h3>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <button onClick={handleAddSong} className="p-4 bg-neutral-800 rounded-xl text-left hover:bg-neutral-700 transition-colors">
+            <div className="text-2xl mb-2">🎵</div>
+            <p className="text-white font-semibold">Upload New Song</p>
+            <p className="text-neutral-400 text-sm">Register a new song with metadata</p>
+          </button>
+          <button className="p-4 bg-neutral-800 rounded-xl text-left hover:bg-neutral-700 transition-colors">
+            <div className="text-2xl mb-2">📄</div>
+            <p className="text-white font-semibold">Create Contract</p>
+            <p className="text-neutral-400 text-sm">Set up royalty agreements</p>
+          </button>
+        </div>
+      </div>
+
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
           <h3 className="font-semibold text-white">Recent Catalog</h3>
-          <button className="text-sm text-gold-400 hover:text-gold-300">View All</button>
         </div>
         {recentCatalog.length === 0 ? (
           <div className="p-8 text-center text-neutral-500">
@@ -170,11 +187,11 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2">
                   {entry.status === 'pending_approval' ? (
                     <span className="flex items-center gap-1 text-xs text-yellow-400">
-                      <Clock size={12} /> Pending
+                      <Clock size={12} /> Pending Approval
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1 text-xs text-amber-400">
-                      <AlertTriangle size={12} /> Unlocked
+                    <span className="flex items-center gap-1 text-xs text-green-400">
+                      <CheckCircle2 size={12} /> Approved
                     </span>
                   )}
                 </div>
@@ -184,7 +201,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Security Overview */}
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
         <div className="flex items-center gap-3 mb-4">
           <Shield size={20} className="text-gold-400" />
