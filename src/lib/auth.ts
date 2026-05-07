@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from './supabase';
 
 type User = {
   id: string;
@@ -23,7 +22,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
     const savedSession = localStorage.getItem('paeam_session');
     if (savedSession) {
       try {
@@ -37,26 +35,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    try {
-      // For demo, accept any email/password
-      const user = { id: '1', email, fullName: email.split('@')[0] };
-      localStorage.setItem('paeam_session', JSON.stringify({ user }));
-      setUser(user);
-      return { error: null };
-    } catch (error) {
-      return { error };
-    }
+    const user = { id: '1', email, fullName: email.split('@')[0] };
+    localStorage.setItem('paeam_session', JSON.stringify({ user }));
+    setUser(user);
+    return { error: null };
   };
 
   const signUp = async (email: string, password: string, metadata?: any) => {
-    try {
-      const user = { id: Date.now().toString(), email, fullName: metadata?.fullName || email.split('@')[0] };
-      localStorage.setItem('paeam_session', JSON.stringify({ user }));
-      setUser(user);
-      return { error: null };
-    } catch (error) {
-      return { error };
-    }
+    const user = { id: Date.now().toString(), email, fullName: metadata?.fullName || email.split('@')[0] };
+    localStorage.setItem('paeam_session', JSON.stringify({ user }));
+    setUser(user);
+    return { error: null };
   };
 
   const signOut = async () => {
