@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Disc3, Plus, Lock, FileText, Music, Image, File, CheckCircle2, AlertTriangle, Upload } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Disc3, Plus, Lock, FileText, Music, File, CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
 
 interface CatalogEntry {
   id: string;
@@ -18,24 +18,7 @@ interface CatalogEntry {
 }
 
 export default function Catalog() {
-  const [entries, setEntries] = useState<CatalogEntry[]>([
-    {
-      id: '1',
-      title: 'Yes You Reign',
-      artist: 'Austin Precious Phiri',
-      genre: 'Afrobeat',
-      isrc: '13 Sept 1990',
-      ownership: 'Owned',
-      createdDate: '13 Sept 1990',
-      releaseDate: '13 Sept 1990',
-      songwriters: ['Austin Precious Phiri'],
-      attachedFiles: ['master.wav', 'contract.pdf', 'artwork'],
-      hasInstrumental: true,
-      hasSessionFile: true,
-      isLocked: false,
-    },
-  ]);
-
+  const [entries, setEntries] = useState<CatalogEntry[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newEntry, setNewEntry] = useState({
     title: '',
@@ -44,6 +27,21 @@ export default function Catalog() {
     isrc: '',
     songwriters: '',
   });
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('paeam_catalog');
+    if (saved) {
+      setEntries(JSON.parse(saved));
+    }
+  }, []);
+
+  // Save to localStorage whenever entries change
+  useEffect(() => {
+    localStorage.setItem('paeam_catalog', JSON.stringify(entries));
+    // Dispatch event for Dashboard to update
+    window.dispatchEvent(new CustomEvent('catalogUpdated', { detail: entries.length }));
+  }, [entries]);
 
   const handleCreateEntry = () => {
     if (!newEntry.title) return;
@@ -64,16 +62,56 @@ export default function Catalog() {
       isLocked: false,
     };
     
-    setEntries([entry, ...entries]);
+    const updated = [entry, ...entries];
+    setEntries(updated);
     setShowCreateForm(false);
     setNewEntry({ title: '', artist: '', genre: '', isrc: '', songwriters: '' });
+    
+    // Also update global catalog count
+    localStorage.setItem('paeam_catalog_count', updated.length.toString());
   };
 
   const initiateLock = (id: string) => {
-    setEntries(entries.map(e => 
+    const updated = entries.map(e => 
       e.id === id ? { ...e, isLocked: true } : e
-    ));
+    );
+    setEntries(updated);
+    
+    // Create lock approval request
+    const existingLocks = JSON.parse(localStorage.getItem('paeam_lock_requests') || '[]');
+    const newLock = {
+      id: Date.now().toString(),
+      type: 'catalog',
+      title: e.title,
+      producerApproved: true,
+      artistApproved: false,
+      associationApproved: false,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+    localStorage.setItem('paeam_lock_requests', JSON.stringify([newLock, ...existingLocks]));
+    
+    // Log to audit trail
+    const audit = JSON.parse(localStorage.getItem('paeam_audit') || '[]');
+    audit.unshift({
+      id: Date.now().toString(),
+      action: 'lock',
+      entityType: 'catalog',
+      entityTitle: entry.title,
+      user: JSON.parse(localStorage.getItem('paeam_user') || '{}').stageName || 'Producer',
+      timestamp: new Date().toLocaleString(),
+      details: `Initiated Three-Way Lock for catalog entry: ${entry.title}`,
+    });
+    localStorage.setItem('paeam_audit', JSON.stringify(audit));
+    
     alert('Three-Way Lock initiated! Waiting for Artist and Association approval.');
+  };
+
+  const deleteEntry = (id: string) => {
+    if (confirm('Are you sure you want to delete this catalog entry?')) {
+      const updated = entries.filter(e => e.id !== id);
+      setEntries(updated);
+    }
   };
 
   return (
@@ -168,17 +206,22 @@ export default function Catalog() {
                     <h3 className="text-xl font-bold text-white">{entry.title}</h3>
                     <p className="text-neutral-400">{entry.artist} - {entry.genre}</p>
                   </div>
-                  {entry.isLocked ? (
-                    <div className="flex items-center gap-2 px-3 py-1 bg-gold-500/10 rounded-full">
-                      <Lock size={14} className="text-gold-400" />
-                      <span className="text-xs text-gold-400 font-medium">Locked</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 rounded-full">
-                      <AlertTriangle size={14} className="text-amber-400" />
-                      <span className="text-xs text-amber-400 font-medium">Unlocked</span>
-                    </div>
-                  )}
+                  <div className="flex gap-2">
+                    {entry.isLocked ? (
+                      <div className="flex items-center gap-2 px-3 py-1 bg-gold-500/10 rounded-full">
+                        <Lock size={14} className="text-gold-400" />
+                        <span className="text-xs text-gold-400 font-medium">Locked</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 rounded-full">
+                        <AlertTriangle size={14} className="text-amber-400" />
+                        <span className="text-xs text-amber-400 font-medium">Unlocked</span>
+                      </div>
+                    )}
+                    <button onClick={() => deleteEntry(entry.id)} className="p-1 hover:bg-red-500/20 rounded-lg transition-colors">
+                      <Trash2 size={16} className="text-red-400" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Metadata Grid */}
