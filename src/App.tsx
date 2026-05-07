@@ -10,17 +10,23 @@ import Contracts from './components/Contracts';
 import LockApprovals from './components/LockApprovals';
 import AuditTrail from './components/AuditTrail';
 import Payment from './components/Payment';
+import AdminDashboard from './components/AdminDashboard';
 
 type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment';
-type AppView = 'landing' | 'auth' | 'app' | 'payment';
+type AppView = 'landing' | 'auth' | 'app' | 'payment' | 'admin';
 
 function AppContent() {
   const { user, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [view, setView] = useState<AppView>('landing');
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
+    // Check if user is admin (you can set this based on email or role)
     if (user) {
+      const isAdminUser = user.email === 'admin@paeam.mw' || user.email === 'austinpreciousphiri@gmail.com';
+      setIsAdmin(isAdminUser);
+      
       const paymentStatus = localStorage.getItem('paeam_paid');
       if (paymentStatus === 'false' || !paymentStatus) {
         setView('payment');
@@ -30,10 +36,16 @@ function AppContent() {
     }
   }, [user]);
 
+  // Listen for admin navigation
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail) setCurrentPage(detail as Page);
+      if (detail === 'admin') {
+        setView('admin');
+      } else if (detail as Page) {
+        setCurrentPage(detail as Page);
+        setView('app');
+      }
     };
     window.addEventListener('navigate', handler);
     return () => window.removeEventListener('navigate', handler);
@@ -64,6 +76,10 @@ function AppContent() {
     return <Payment onComplete={() => setView('app')} />;
   }
 
+  if (view === 'admin') {
+    return <AdminDashboard />;
+  }
+
   if (view === 'app') {
     const renderPage = () => {
       switch (currentPage) {
@@ -78,7 +94,7 @@ function AppContent() {
     };
 
     return (
-      <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
+      <Layout currentPage={currentPage} onNavigate={setCurrentPage} isAdmin={isAdmin}>
         {renderPage()}
       </Layout>
     );
