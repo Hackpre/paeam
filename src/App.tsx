@@ -56,31 +56,35 @@ function AppContent() {
     );
   }
 
-  if (view === 'auth' && !user) {
-    return <Auth />;
+  if (view === 'auth') {
+    return <Auth onSuccess={() => setView('payment')} />;
   }
 
   if (view === 'payment') {
     return <Payment onComplete={() => setView('app')} />;
   }
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'dashboard': return <Dashboard />;
-      case 'profile': return <ProducerProfilePage />;
-      case 'catalog': return <Catalog />;
-      case 'contracts': return <Contracts />;
-      case 'locks': return <LockApprovals />;
-      case 'audit': return <AuditTrail />;
-      default: return <Dashboard />;
-    }
-  };
+  if (view === 'app' && user) {
+    const renderPage = () => {
+      switch (currentPage) {
+        case 'dashboard': return <Dashboard />;
+        case 'profile': return <ProducerProfilePage />;
+        case 'catalog': return <Catalog />;
+        case 'contracts': return <Contracts />;
+        case 'locks': return <LockApprovals />;
+        case 'audit': return <AuditTrail />;
+        default: return <Dashboard />;
+      }
+    };
 
-  return (
-    <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
-      {renderPage()}
-    </Layout>
-  );
+    return (
+      <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
+        {renderPage()}
+      </Layout>
+    );
+  }
+
+  return null;
 }
 
 function App() {
