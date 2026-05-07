@@ -19,12 +19,13 @@ jobs:
           node-version: '18'
           
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm install --force
         
-      - name: Build project
-        run: NODE_OPTIONS="--max-old-space-size=4096" npm run build
+      - name: Build project (show errors)
+        run: npm run build 2>&1
         
       - name: Upload dist folder
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: dist
