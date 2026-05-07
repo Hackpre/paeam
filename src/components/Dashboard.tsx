@@ -15,18 +15,83 @@ import {
 export default function Dashboard() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [catalogCount, setCatalogCount] = useState(1);
-  const [contractCount, setContractCount] = useState(1);
-  const [lockedCount, setLockedCount] = useState(2);
+  const [catalogCount, setCatalogCount] = useState(0);
+  const [contractCount, setContractCount] = useState(0);
+  const [lockedCount, setLockedCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
-  const [recentCatalog, setRecentCatalog] = useState([
-    { id: 1, title: 'Yes You Reign', artist: 'Austin Precious Phiri', genre: 'Afrobeat', status: 'unlocked' },
-  ]);
+  const [recentCatalog, setRecentCatalog] = useState<any[]>([]);
   const [profile, setProfile] = useState({ stage_name: 'Sir EL-Phi', verification: 'pending' });
 
+  // Load data from localStorage on mount
   useEffect(() => {
-    // Load data from localStorage or Supabase
+    // Load catalog
+    const savedCatalog = localStorage.getItem('paeam_catalog');
+    if (savedCatalog) {
+      const catalog = JSON.parse(savedCatalog);
+      setCatalogCount(catalog.length);
+      setRecentCatalog(catalog.slice(0, 5));
+    }
+
+    // Load contracts
+    const savedContracts = localStorage.getItem('paeam_contracts');
+    if (savedContracts) {
+      setContractCount(JSON.parse(savedContracts).length);
+    }
+
+    // Load lock requests
+    const savedLocks = localStorage.getItem('paeam_lock_requests');
+    if (savedLocks) {
+      const locks = JSON.parse(savedLocks);
+      setPendingCount(locks.filter((l: any) => l.status === 'pending').length);
+      setLockedCount(locks.filter((l: any) => l.status === 'fully_locked').length);
+    }
+
+    // Load user profile
+    const savedUser = localStorage.getItem('paeam_user');
+    if (savedUser) {
+      const userData = JSON.parse(savedUser);
+      setProfile({ stage_name: userData.stageName || userData.fullName?.split(' ')[0] || 'Producer', verification: 'pending' });
+    }
+
     setLoading(false);
+  }, []);
+
+  // Listen for catalog updates from Catalog module
+  useEffect(() => {
+    const handleCatalogUpdate = () => {
+      const saved = localStorage.getItem('paeam_catalog');
+      if (saved) {
+        const catalog = JSON.parse(saved);
+        setCatalogCount(catalog.length);
+        setRecentCatalog(catalog.slice(0, 5));
+      }
+    };
+
+    const handleContractUpdate = () => {
+      const saved = localStorage.getItem('paeam_contracts');
+      if (saved) {
+        setContractCount(JSON.parse(saved).length);
+      }
+    };
+
+    const handleLockUpdate = () => {
+      const saved = localStorage.getItem('paeam_lock_requests');
+      if (saved) {
+        const locks = JSON.parse(saved);
+        setPendingCount(locks.filter((l: any) => l.status === 'pending').length);
+        setLockedCount(locks.filter((l: any) => l.status === 'fully_locked').length);
+      }
+    };
+
+    window.addEventListener('catalogUpdated', handleCatalogUpdate);
+    window.addEventListener('contractUpdated', handleContractUpdate);
+    window.addEventListener('lockUpdated', handleLockUpdate);
+    
+    return () => {
+      window.removeEventListener('catalogUpdated', handleCatalogUpdate);
+      window.removeEventListener('contractUpdated', handleContractUpdate);
+      window.removeEventListener('lockUpdated', handleLockUpdate);
+    };
   }, []);
 
   if (loading) {
@@ -115,7 +180,7 @@ export default function Dashboard() {
                   <p className="text-xs text-neutral-500">{entry.artist} - {entry.genre}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {entry.status === 'locked' ? (
+                  {entry.isLocked ? (
                     <span className="flex items-center gap-1 text-xs text-gold-400">
                       <Lock size={12} /> Locked
                     </span>
