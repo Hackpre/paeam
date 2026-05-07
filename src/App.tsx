@@ -9,9 +9,10 @@ import Catalog from './components/Catalog';
 import Contracts from './components/Contracts';
 import LockApprovals from './components/LockApprovals';
 import AuditTrail from './components/AuditTrail';
+import Payment from './components/Payment';
 
-type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit';
-type AppView = 'landing' | 'auth' | 'app';
+type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment';
+type AppView = 'landing' | 'auth' | 'app' | 'payment';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -20,7 +21,13 @@ function AppContent() {
 
   useEffect(() => {
     if (user) {
-      setView('app');
+      // Check if payment is pending
+      const paymentStatus = localStorage.getItem('paeam_paid');
+      if (paymentStatus === 'false' || !paymentStatus) {
+        setView('payment');
+      } else {
+        setView('app');
+      }
     }
   }, [user]);
 
@@ -35,7 +42,7 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
         <div className="w-10 h-10 border-2 border-gold-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -52,6 +59,10 @@ function AppContent() {
 
   if (view === 'auth' && !user) {
     return <Auth />;
+  }
+
+  if (view === 'payment') {
+    return <Payment onComplete={() => setView('app')} />;
   }
 
   const renderPage = () => {
