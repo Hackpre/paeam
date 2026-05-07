@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
 
 const PAYCHANGU_SECRET_KEY = "SEC-TEST-esDPROlaHslxXyTnc3AqkdiFI3Yt8uH";
 
@@ -14,7 +13,6 @@ export default function Payment() {
     setError(null);
     
     try {
-      // Get current user from localStorage (temporary until auth is fixed)
       const userStr = localStorage.getItem('paeam_user');
       const user = userStr ? JSON.parse(userStr) : null;
       
@@ -46,8 +44,7 @@ export default function Payment() {
       const data = await response.json();
       
       if (data.status === 'success') {
-        // Store that payment was initiated
-        localStorage.setItem('paeam_payment_initiated', 'true');
+        localStorage.setItem('paeam_paid', 'true');
         window.location.href = data.payment_url;
       } else {
         setError(data.message || 'Payment failed. Please try again.');
@@ -78,7 +75,7 @@ export default function Payment() {
         
         <div className="bg-neutral-800 rounded-xl p-4 mb-6">
           <p className="text-neutral-300 text-sm">You will be redirected to PayChangu to complete your payment.</p>
-          <p className="text-neutral-500 text-xs mt-2">Supported: Airtel Money, MPamba, National Bank</p>
+          <p className="text-neutral-500 text-xs mt-2">Supported: Airtel Money, Mpamba, National Bank</p>
         </div>
         
         <button 
