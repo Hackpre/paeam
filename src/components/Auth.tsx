@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Mail, Lock, Eye, EyeOff, AlertCircle, User, Phone, Fingerprint } from 'lucide-react';
 
 interface AuthProps {
-  onSuccess?: () => void;
+  onSuccess: () => void;
 }
 
 export default function Auth({ onSuccess }: AuthProps) {
@@ -33,13 +33,11 @@ export default function Auth({ onSuccess }: AuthProps) {
       }
       
       // Store user data
-      const userData = { fullName, stageName, phone, nationalId, ipiNumber, email, password };
+      const userData = { fullName, stageName, phone, nationalId, ipiNumber, email };
       localStorage.setItem('paeam_user', JSON.stringify(userData));
       localStorage.setItem('paeam_paid', 'false');
       
-      if (onSuccess) {
-        onSuccess();
-      }
+      onSuccess();
       setLoading(false);
       return;
     }
@@ -50,9 +48,7 @@ export default function Auth({ onSuccess }: AuthProps) {
       const user = JSON.parse(savedUser);
       if (user.email === email) {
         localStorage.setItem('paeam_logged_in', 'true');
-        if (onSuccess) {
-          onSuccess();
-        }
+        onSuccess();
       } else {
         setError('Invalid email');
       }
