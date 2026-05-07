@@ -32,7 +32,6 @@ export default function Auth() {
         return;
       }
       
-      // Save user data for payment
       const userData = { fullName, stageName, email, phone, nationalId, ipiNumber, password };
       localStorage.setItem('paeam_user', JSON.stringify(userData));
       setShowPayment(true);
@@ -40,7 +39,6 @@ export default function Auth() {
       return;
     }
 
-    // Login
     const savedUser = localStorage.getItem('paeam_user');
     if (savedUser) {
       const user = JSON.parse(savedUser);
