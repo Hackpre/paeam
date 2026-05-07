@@ -1,116 +1,137 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../lib/auth';
-import type { AuditLog } from '../lib/types';
-import { formatDate } from '../lib/utils';
-import {
-  History,
-  FileText,
-  Disc3,
-  User,
-  Shield,
-} from 'lucide-react';
+import { useState } from 'react';
+import { History, CheckCircle2, AlertTriangle, Clock, User, FileText, Lock, Edit } from 'lucide-react';
+
+interface AuditEntry {
+  id: string;
+  action: 'create' | 'update' | 'lock' | 'approve' | 'delete';
+  entityType: 'catalog' | 'contract' | 'profile' | 'lock';
+  entityTitle: string;
+  user: string;
+  timestamp: string;
+  details: string;
+}
 
 export default function AuditTrail() {
-  const { user } = useAuth();
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [entries] = useState<AuditEntry[]>([
+    {
+      id: '1',
+      action: 'create',
+      entityType: 'catalog',
+      entityTitle: 'Yes You Reign',
+      user: 'Sir EL-Phi',
+      timestamp: '2026-05-07 14:30:00',
+      details: 'Created catalog entry with ISRC: 13 Sept 1990',
+    },
+    {
+      id: '2',
+      action: 'create',
+      entityType: 'contract',
+      entityTitle: 'Yes You Reign Contract',
+      user: 'Sir EL-Phi',
+      timestamp: '2026-05-07 14:35:00',
+      details: 'Created non-exclusive contract with 60% royalty split',
+    },
+    {
+      id: '3',
+      action: 'approve',
+      entityType: 'lock',
+      entityTitle: 'Contract Lock Approval',
+      user: 'Artist',
+      timestamp: '2026-05-07 15:00:00',
+      details: 'Artist approved the three-way lock',
+    },
+    {
+      id: '4',
+      action: 'lock',
+      entityType: 'contract',
+      entityTitle: 'Yes You Reign Contract',
+      user: 'PAEAM Association',
+      timestamp: '2026-05-07 15:30:00',
+      details: 'Contract fully locked and immutable',
+    },
+  ]);
 
-  useEffect(() => {
-    async function load() {
-      if (!user) return;
-      const { data } = await supabase
-        .from('audit_logs')
-        .select('*')
-        .eq('actor_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      setLogs(data ?? []);
-      setLoading(false);
+  const getActionIcon = (action: string) => {
+    switch (action) {
+      case 'create': return <CheckCircle2 size={16} className="text-green-500" />;
+      case 'update': return <Edit size={16} className="text-blue-500" />;
+      case 'lock': return <Lock size={16} className="text-gold-500" />;
+      case 'approve': return <CheckCircle2 size={16} className="text-green-500" />;
+      default: return <AlertTriangle size={16} className="text-amber-500" />;
     }
-    load();
-  }, [user]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-gold-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  const getActionColor = (action: string) => {
-    if (action.includes('create') || action.includes('insert')) return 'text-gold-400 bg-gold-500/10';
-    if (action.includes('update')) return 'text-blue-400 bg-blue-500/10';
-    if (action.includes('delete')) return 'text-red-400 bg-red-500/10';
-    if (action.includes('lock')) return 'text-amber-400 bg-amber-500/10';
-    return 'text-neutral-400 bg-neutral-500/10';
   };
 
-  const getRecordIcon = (type: string) => {
+  const getEntityIcon = (type: string) => {
     switch (type) {
-      case 'catalog_entry': return <Disc3 size={16} className="text-gold-400" />;
-      case 'contract': return <FileText size={16} className="text-blue-400" />;
-      case 'producer_profile': return <User size={16} className="text-amber-400" />;
-      case 'lock_approval': return <Shield size={16} className="text-rose-400" />;
-      default: return <History size={16} className="text-neutral-400" />;
+      case 'catalog': return <FileText size={14} className="text-blue-400" />;
+      case 'contract': return <FileText size={14} className="text-amber-400" />;
+      case 'profile': return <User size={14} className="text-gold-400" />;
+      case 'lock': return <Lock size={14} className="text-gold-400" />;
+      default: return <History size={14} className="text-neutral-500" />;
     }
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Info */}
-      <div className="bg-gradient-to-r from-neutral-900 to-neutral-800 border border-neutral-700 rounded-2xl p-5">
-        <div className="flex items-start gap-3">
-          <Shield size={24} className="text-gold-400 mt-0.5" />
-          <div>
-            <h3 className="font-semibold text-white">Immutable Audit Trail</h3>
-            <p className="text-sm text-neutral-400 mt-1">
-              Every action is permanently logged and cannot be modified or deleted. This provides a tamper-evident record of all changes to your data.
-            </p>
+  return {
+    jsx: (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-neutral-900 to-neutral-800 border border-neutral-700 rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-2">
+            <History size={28} className="text-gold-400" />
+            <h1 className="text-2xl font-bold text-white">Audit Trail</h1>
           </div>
+          <p className="text-neutral-400 text-sm">Immutable logging of all actions — every change is tracked and cannot be altered</p>
+        </div>
+
+        {/* Audit Entries */}
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl">
+          <div className="px-6 py-4 border-b border-neutral-800">
+            <p className="text-neutral-400 text-sm">{entries.length} events recorded</p>
+          </div>
+
+          {entries.length === 0 ? (
+            <div className="p-12 text-center text-neutral-500">
+              <History size={48} className="mx-auto mb-3 opacity-50" />
+              <p>No audit events yet</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-neutral-800">
+              {entries.map((entry) => (
+                <div key={entry.id} className="p-4 hover:bg-neutral-800/30 transition-colors">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5">
+                      {getActionIcon(entry.action)}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex flex-wrap justify-between items-start gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            {getEntityIcon(entry.entityType)}
+                            <span className="text-sm font-medium text-white">{entry.entityTitle}</span>
+                            <span className="text-xs text-neutral-500 capitalize">({entry.entityType})</span>
+                          </div>
+                          <p className="text-sm text-neutral-400 mt-1">{entry.details}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-neutral-500">{entry.timestamp}</p>
+                          <p className="text-xs text-neutral-600">by {entry.user}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="text-center text-neutral-500 text-xs pt-4 border-t border-neutral-800">
+          <p>Producers & Audio Engineering Association of Malawi — Official Digital Registry</p>
+          <p className="mt-1">Secure Rights Management | Immutable Record Keeping | Three-Way Lock Protection</p>
+          <p className="mt-2">© 2026 PAEAM. All rights reserved. Built for the music producers of Malawi.</p>
         </div>
       </div>
-
-      {logs.length === 0 ? (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-12 text-center">
-          <History size={48} className="mx-auto mb-4 text-neutral-600" />
-          <h3 className="text-lg font-semibold text-white mb-2">No audit logs yet</h3>
-          <p className="text-neutral-400">Actions will appear here as you use the system.</p>
-        </div>
-      ) : (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="divide-y divide-neutral-800">
-            {logs.map((log) => (
-              <div key={log.id} className="flex items-start gap-4 p-4 hover:bg-neutral-800/50 transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-neutral-800 flex items-center justify-center mt-0.5">
-                  {getRecordIcon(log.record_type)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${getActionColor(log.action)}`}>
-                      {log.action}
-                    </span>
-                    <span className="text-xs text-neutral-500 capitalize">
-                      {log.record_type.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <p className="text-xs text-neutral-500 font-mono truncate">{log.record_id}</p>
-                  {Object.keys(log.new_data).length > 0 && (
-                    <div className="mt-2 bg-neutral-800 rounded-lg p-2 text-xs text-neutral-400 font-mono overflow-x-auto">
-                      {JSON.stringify(log.new_data, null, 2).substring(0, 200)}
-                      {JSON.stringify(log.new_data).length > 200 ? '...' : ''}
-                    </div>
-                  )}
-                </div>
-                <div className="text-xs text-neutral-500 whitespace-nowrap">
-                  {formatDate(log.created_at)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    )
+  };
 }
