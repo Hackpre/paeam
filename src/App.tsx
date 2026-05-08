@@ -10,24 +10,20 @@ import Contracts from './components/Contracts';
 import LockApprovals from './components/LockApprovals';
 import AuditTrail from './components/AuditTrail';
 import Payment from './components/Payment';
+import AdminDashboard from './components/AdminDashboard';
+import Disputes from './components/Disputes';
 
-type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment';
-type AppView = 'landing' | 'auth' | 'app' | 'payment';
+type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment' | 'admin' | 'disputes';
+type AppView = 'landing' | 'auth' | 'app';
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [view, setView] = useState<AppView>('landing');
 
   useEffect(() => {
     if (user) {
-      // Check if payment is pending
-      const paymentStatus = localStorage.getItem('paeam_paid');
-      if (paymentStatus === 'false' || !paymentStatus) {
-        setView('payment');
-      } else {
-        setView('app');
-      }
+      setView('app');
     }
   }, [user]);
 
@@ -61,10 +57,6 @@ function AppContent() {
     return <Auth />;
   }
 
-  if (view === 'payment') {
-    return <Payment onComplete={() => setView('app')} />;
-  }
-
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard': return <Dashboard />;
@@ -73,12 +65,26 @@ function AppContent() {
       case 'contracts': return <Contracts />;
       case 'locks': return <LockApprovals />;
       case 'audit': return <AuditTrail />;
+      case 'payment': return <Payment />;
+      case 'admin': return <AdminDashboard />;
+      case 'disputes': return <Disputes />;
       default: return <Dashboard />;
     }
   };
 
+  const navItems = [
+    { id: 'dashboard' as Page, label: 'Dashboard' },
+    { id: 'profile' as Page, label: 'Producer Profile' },
+    { id: 'catalog' as Page, label: 'Catalog' },
+    { id: 'contracts' as Page, label: 'Contracts' },
+    { id: 'locks' as Page, label: 'Lock Approvals' },
+    { id: 'disputes' as Page, label: 'Disputes' },
+    { id: 'audit' as Page, label: 'Audit Trail' },
+    ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin Dashboard' }] : []),
+  ];
+
   return (
-    <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
+    <Layout currentPage={currentPage} onNavigate={setCurrentPage} navItems={navItems}>
       {renderPage()}
     </Layout>
   );

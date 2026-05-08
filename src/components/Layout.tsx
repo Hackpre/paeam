@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../lib/auth';
 import {
-  Music,
   LayoutDashboard,
   User,
   Disc3,
@@ -11,27 +10,44 @@ import {
   Menu,
   X,
   ChevronRight,
+  Shield,
+  Scale,
+  AlertTriangle,
 } from 'lucide-react';
 
-type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit';
+type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment' | 'admin' | 'disputes';
 
 interface LayoutProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
+  navItems?: { id: Page; label: string }[];
   children: React.ReactNode;
 }
 
-const navItems: { id: Page; label: string; icon: React.ReactNode }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-  { id: 'profile', label: 'Producer Profile', icon: <User size={20} /> },
-  { id: 'catalog', label: 'Catalog', icon: <Disc3 size={20} /> },
-  { id: 'contracts', label: 'Contracts', icon: <FileText size={20} /> },
-  { id: 'locks', label: 'Lock Approvals', icon: <Lock size={20} /> },
-  { id: 'audit', label: 'Audit Trail', icon: <ChevronRight size={20} /> },
+const iconMap: Record<string, React.ReactNode> = {
+  dashboard: <LayoutDashboard size={20} />,
+  profile: <User size={20} />,
+  catalog: <Disc3 size={20} />,
+  contracts: <FileText size={20} />,
+  locks: <Lock size={20} />,
+  disputes: <Scale size={20} />,
+  audit: <ChevronRight size={20} />,
+  admin: <Shield size={20} />,
+  payment: <AlertTriangle size={20} />,
+};
+
+const defaultNavItems: { id: Page; label: string }[] = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'profile', label: 'Producer Profile' },
+  { id: 'catalog', label: 'Catalog' },
+  { id: 'contracts', label: 'Contracts' },
+  { id: 'locks', label: 'Lock Approvals' },
+  { id: 'disputes', label: 'Disputes' },
+  { id: 'audit', label: 'Audit Trail' },
 ];
 
-export default function Layout({ currentPage, onNavigate, children }: LayoutProps) {
-  const { user, signOut } = useAuth();
+export default function Layout({ currentPage, onNavigate, navItems = defaultNavItems, children }: LayoutProps) {
+  const { user, signOut, profile } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -78,7 +94,7 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
               }`}
             >
-              {item.icon}
+              {iconMap[item.id] || <ChevronRight size={20} />}
               {item.label}
             </button>
           ))}
@@ -86,12 +102,14 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
 
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-neutral-800">
           <div className="flex items-center gap-3 mb-3 px-2">
-            <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center text-xs font-bold text-neutral-300">
-              {user?.email?.charAt(0).toUpperCase() ?? 'U'}
+            <div className="w-8 h-8 rounded-full bg-gold-500/20 flex items-center justify-center text-xs font-bold text-gold-400">
+              {profile?.stage_name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-white truncate">{user?.email}</p>
-              <p className="text-xs text-neutral-500">Authenticated</p>
+              <p className="text-sm text-white truncate">{profile?.stage_name || user?.email}</p>
+              <p className="text-xs text-neutral-500">
+                {profile?.membership_status === 'active' ? 'Active Member' : profile?.membership_status === 'trial' ? 'Free Trial' : 'Authenticated'}
+              </p>
             </div>
           </div>
           <button
