@@ -1,7 +1,7 @@
 export type UserRole = 'super_admin' | 'paeam_admin' | 'moderator' | 'producer' | 'artist' | 'viewer' | 'auditor';
 export type MembershipStatus = 'trial' | 'active' | 'grace' | 'suspended' | 'bank_transfer_pending';
 export type VerificationStatus = 'pending' | 'verified' | 'rejected' | 'suspended';
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'locked';
 export type PaymentType = 'membership' | 'late_renewal' | 'contract_registration' | 'royalty_distribution';
 export type PaymentStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'refunded' | 'bank_transfer_pending';
 export type PaymentMethod = '' | 'airtel_money' | 'tnm_mpamba' | 'national_bank' | 'card';
@@ -66,6 +66,8 @@ export interface CatalogEntry {
   approval_status: ApprovalStatus;
   approved_by: string | null;
   approved_at: string | null;
+  admin_approved_by: string | null;
+  admin_approved_at: string | null;
   rejection_reason: string;
   sync_rights_pct: number;
   created_at: string;
@@ -104,6 +106,8 @@ export interface Contract {
   approval_status: ApprovalStatus;
   approved_by: string | null;
   approved_at: string | null;
+  admin_approved_by: string | null;
+  admin_approved_at: string | null;
   rejection_reason: string;
   template_id: string | null;
   renewal_option: RenewalOption;
@@ -136,6 +140,8 @@ export interface LockApproval {
   id: string;
   record_type: RecordType;
   record_id: string;
+  artist_id: string | null;
+  association_id: string | null;
   producer_approved: boolean;
   producer_approved_at: string | null;
   producer_approval_hash: string;

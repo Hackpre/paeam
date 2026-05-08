@@ -9,6 +9,7 @@ import {
   X,
   Lock,
   CheckCircle2,
+  XCircle,
   AlertTriangle,
   Percent,
   Globe,
@@ -285,24 +286,30 @@ export default function Contracts() {
     setRecipients(updated);
   };
 
-  const approvalBadge = (status: Contract['approval_status']) => {
+  const approvalBadge = (status: Contract['approval_status'], rejectionReason?: string) => {
     switch (status) {
+      case 'locked':
+        return (
+          <span className="flex items-center gap-1 text-xs text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2 py-1 rounded-full">
+            <Lock size={12} /> Locked - Immutable
+          </span>
+        );
       case 'approved':
         return (
-          <span className="flex items-center gap-1 text-xs text-green-400 bg-green-500/10 px-2 py-1 rounded-full">
+          <span className="flex items-center gap-1 text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded-full">
             <CheckCircle2 size={12} /> Approved
           </span>
         );
       case 'rejected':
         return (
-          <span className="flex items-center gap-1 text-xs text-red-400 bg-red-500/10 px-2 py-1 rounded-full">
-            <AlertTriangle size={12} /> Rejected
+          <span className="flex items-center gap-1 text-xs text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-1 rounded-full" title={rejectionReason}>
+            <XCircle size={12} /> Rejected by Admin
           </span>
         );
       default:
         return (
-          <span className="flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 px-2 py-1 rounded-full">
-            <Clock size={12} /> Pending
+          <span className="flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2 py-1 rounded-full">
+            <Clock size={12} /> Pending Admin Approval
           </span>
         );
     }
@@ -629,12 +636,13 @@ export default function Contracts() {
                   <p className="text-sm text-neutral-400 capitalize">{contract.contract_type.replace(/-/g, ' ')} Agreement</p>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  {approvalBadge(contract.approval_status)}
-                  {contract.is_locked ? (
+                  {approvalBadge(contract.approval_status, contract.rejection_reason)}
+                  {contract.is_locked && contract.approval_status !== 'locked' && (
                     <span className="flex items-center gap-1 text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded-full">
                       <Lock size={12} /> Locked
                     </span>
-                  ) : (
+                  )}
+                  {!contract.is_locked && contract.approval_status !== 'locked' && (
                     <span className="flex items-center gap-1 text-xs text-gold-400 bg-gold-500/10 px-2 py-1 rounded-full">
                       <Clock size={12} /> Unlocked
                     </span>
@@ -769,18 +777,37 @@ export default function Contracts() {
                   <div>
                     <h5 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Approval Status</h5>
                     <div className="flex items-center gap-3">
-                      {approvalBadge(contract.approval_status)}
+                      {approvalBadge(contract.approval_status, contract.rejection_reason)}
                       {contract.approved_at && (
                         <span className="text-xs text-neutral-500">
                           {formatDate(contract.approved_at)}
                         </span>
                       )}
-                      {contract.rejection_reason && (
-                        <span className="text-xs text-red-400">
-                          Reason: {contract.rejection_reason}
-                        </span>
-                      )}
                     </div>
+                    {contract.rejection_reason && (
+                      <div className="mt-2 bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                        <p className="text-xs text-red-400 font-medium mb-1">Rejection Reason</p>
+                        <p className="text-sm text-neutral-300">{contract.rejection_reason}</p>
+                      </div>
+                    )}
+                    {contract.approval_status === 'approved' && contract.admin_approved_at && (
+                      <div className="mt-2 bg-green-500/10 border border-green-500/20 rounded-xl p-3 flex items-center gap-3">
+                        <CheckCircle2 size={16} className="text-green-400 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-green-400 font-medium">Admin Approved</p>
+                          <p className="text-xs text-neutral-400">{formatDate(contract.admin_approved_at)}</p>
+                        </div>
+                      </div>
+                    )}
+                    {contract.approval_status === 'locked' && (
+                      <div className="mt-2 bg-gold-500/10 border border-gold-500/20 rounded-xl p-3 flex items-center gap-3">
+                        <Lock size={16} className="text-gold-400 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-gold-400 font-medium">Record Locked - Immutable</p>
+                          <p className="text-xs text-neutral-400">This contract has been sealed by the Three-Way Lock and cannot be modified.</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Lock Button */}

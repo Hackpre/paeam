@@ -48,8 +48,14 @@ const FILE_TYPE_LABELS: Record<FileType, string> = {
   other: 'Other',
 };
 
-function ApprovalBadge({ status }: { status: ApprovalStatus }) {
+function ApprovalBadge({ status, rejectionReason }: { status: ApprovalStatus; rejectionReason?: string }) {
   switch (status) {
+    case 'locked':
+      return (
+        <span className="inline-flex items-center gap-1 text-xs text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2.5 py-1 rounded-full">
+          <Lock size={12} /> Locked - Immutable
+        </span>
+      );
     case 'approved':
       return (
         <span className="inline-flex items-center gap-1 text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2.5 py-1 rounded-full">
@@ -58,15 +64,15 @@ function ApprovalBadge({ status }: { status: ApprovalStatus }) {
       );
     case 'rejected':
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-red-400 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-full">
-          <XCircle size={12} /> Rejected
+        <span className="inline-flex items-center gap-1 text-xs text-red-400 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-full" title={rejectionReason}>
+          <XCircle size={12} /> Rejected by Admin
         </span>
       );
     case 'pending':
     default:
       return (
         <span className="inline-flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1 rounded-full">
-          <Clock size={12} /> Pending
+          <Clock size={12} /> Pending Admin Approval
         </span>
       );
   }
@@ -671,12 +677,13 @@ export default function Catalog() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <ApprovalBadge status={entry.approval_status} />
-                    {entry.is_locked ? (
+                    <ApprovalBadge status={entry.approval_status} rejectionReason={entry.rejection_reason} />
+                    {entry.is_locked && entry.approval_status !== 'locked' && (
                       <span className="flex items-center gap-1 text-xs text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2 py-1 rounded-full">
                         <Lock size={12} /> Locked
                       </span>
-                    ) : (
+                    )}
+                    {!entry.is_locked && entry.approval_status !== 'locked' && (
                       <span className="flex items-center gap-1 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full">
                         <Unlock size={12} /> Unlocked
                       </span>
@@ -751,6 +758,14 @@ export default function Catalog() {
                         </p>
                       </div>
                     </div>
+
+                    {/* Rejection Reason */}
+                    {entry.approval_status === 'rejected' && entry.rejection_reason && (
+                      <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                        <p className="text-xs text-red-400 font-medium mb-1">Rejection Reason</p>
+                        <p className="text-sm text-neutral-300">{entry.rejection_reason}</p>
+                      </div>
+                    )}
 
                     {/* Publishing Details */}
                     {entry.publishing_details && (
@@ -849,6 +864,26 @@ export default function Catalog() {
                         </div>
                       )}
                     </div>
+
+                    {/* Admin Approval Info */}
+                    {entry.approval_status === 'approved' && entry.approved_at && (
+                      <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3 flex items-center gap-3">
+                        <CheckCircle2 size={16} className="text-green-400 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-green-400 font-medium">Admin Approved</p>
+                          <p className="text-xs text-neutral-400">{formatDate(entry.approved_at)}</p>
+                        </div>
+                      </div>
+                    )}
+                    {entry.approval_status === 'locked' && (
+                      <div className="bg-gold-500/10 border border-gold-500/20 rounded-xl p-3 flex items-center gap-3">
+                        <Lock size={16} className="text-gold-400 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-gold-400 font-medium">Record Locked - Immutable</p>
+                          <p className="text-xs text-neutral-400">This record has been sealed by the Three-Way Lock and cannot be modified.</p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Lock Button */}
                     {!entry.is_locked && (

@@ -12,7 +12,44 @@ import {
   Music,
   FileText,
   AlertTriangle,
+  ArrowRight,
 } from 'lucide-react';
+
+function StepIndicator({ label, icon, approved, approvedAt, isLast }: {
+  label: string;
+  icon: React.ReactNode;
+  approved: boolean;
+  approvedAt: string | null;
+  isLast: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex flex-col items-center">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
+          approved
+            ? 'bg-green-500/20 border-green-500 text-green-400'
+            : 'bg-neutral-800 border-neutral-700 text-neutral-500'
+        }`}>
+          {approved ? <CheckCircle2 size={18} /> : icon}
+        </div>
+        {!isLast && (
+          <div className={`w-0.5 h-8 mt-1 ${approved ? 'bg-green-500/40' : 'bg-neutral-700'}`} />
+        )}
+      </div>
+      <div className="pt-1.5">
+        <p className={`text-sm font-medium ${approved ? 'text-green-400' : 'text-neutral-400'}`}>
+          {label}
+        </p>
+        {approved && approvedAt && (
+          <p className="text-xs text-neutral-500 mt-0.5">{formatDateTime(approvedAt)}</p>
+        )}
+        {!approved && (
+          <p className="text-xs text-neutral-500 mt-0.5">Waiting...</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function LockApprovals() {
   const { user } = useAuth();
@@ -89,10 +126,9 @@ export default function LockApprovals() {
         const tableName = approval.record_type === 'catalog_entry' ? 'catalog_entries' : 'contracts';
         await supabase
           .from(tableName)
-          .update({ is_locked: true })
+          .update({ is_locked: true, approval_status: 'locked' })
           .eq('id', approval.record_id);
 
-        // Audit log for lock completion
         await supabase.from('audit_logs').insert({
           actor_id: user?.id || '',
           action: 'lock_completed',
@@ -101,7 +137,6 @@ export default function LockApprovals() {
           new_data: { fully_locked: true, locked_at: new Date().toISOString() },
         });
       } else {
-        // Audit log for individual approval
         await supabase.from('audit_logs').insert({
           actor_id: user?.id || '',
           action: 'lock_approved',
@@ -136,6 +171,19 @@ export default function LockApprovals() {
   const pending = approvals.filter((a) => !a.is_fully_locked);
   const locked = approvals.filter((a) => a.is_fully_locked);
 
+  function getWorkflowStatus(approval: LockApproval) {
+    if (approval.producer_approved && approval.artist_approved && !approval.association_approved) {
+      return { label: 'Pending Association Finalization', color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' };
+    }
+    if (approval.producer_approved && !approval.artist_approved) {
+      return { label: 'Pending Artist Approval', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' };
+    }
+    if (!approval.producer_approved) {
+      return { label: 'Pending Producer Initiation', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' };
+    }
+    return { label: 'In Progress', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' };
+  }
+
   return (
     <div className="space-y-6">
       {message && (
@@ -161,9 +209,9 @@ export default function LockApprovals() {
               Records become immutable once all three parties approve:{' '}
               <strong className="text-gold-400">Producer</strong>,{' '}
               <strong className="text-gold-400">Artist</strong>, and{' '}
-              <strong className="text-gold-400">Association</strong>. No one -- including
-              backend admins -- can alter locked records without invalidating the
-              cryptographic signatures.
+              <strong className="text-gold-400">Association Witness</strong>. The Association (PAEAM Admin) is the final
+              approver who seals the lock. No one -- including backend admins -- can alter locked records
+              without invalidating the cryptographic signatures.
             </p>
           </div>
         </div>
@@ -180,160 +228,171 @@ export default function LockApprovals() {
             No pending approvals
           </div>
         ) : (
-          <div className="space-y-3">
-            {pending.map((approval) => (
-              <div
-                key={approval.id}
-                className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5"
-              >
-                <div className="flex items-center gap-3 mb-4">
-                  <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                      approval.record_type === 'catalog_entry'
-                        ? 'bg-gold-500/20 text-gold-400'
-                        : 'bg-gold-500/20 text-gold-400'
-                    }`}
-                  >
-                    {approval.record_type === 'catalog_entry' ? (
-                      <Music size={20} />
-                    ) : (
-                      <FileText size={20} />
-                    )}
+          <div className="space-y-4">
+            {pending.map((approval) => {
+              const workflowStatus = getWorkflowStatus(approval);
+              return (
+                <div
+                  key={approval.id}
+                  className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5"
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-gold-500/20 flex items-center justify-center text-gold-400">
+                      {approval.record_type === 'catalog_entry' ? (
+                        <Music size={20} />
+                      ) : (
+                        <FileText size={20} />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-white capitalize">
+                        {approval.record_type.replace('_', ' ')}
+                      </p>
+                      <p className="text-xs text-neutral-500 font-mono">
+                        {approval.record_id}
+                      </p>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${workflowStatus.color}`}>
+                      {workflowStatus.label}
+                    </span>
                   </div>
-                  <div>
-                    <p className="font-medium text-white capitalize">
-                      {approval.record_type.replace('_', ' ')}
-                    </p>
-                    <p className="text-xs text-neutral-500 font-mono">
-                      {approval.record_id}
-                    </p>
-                  </div>
-                </div>
 
-                {/* Three Approval Status Cards */}
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                  {/* Producer Card */}
-                  <div
-                    className={`rounded-xl p-3 text-center ${
-                      approval.producer_approved
-                        ? 'bg-gold-500/10 border border-gold-500/20'
-                        : 'bg-neutral-800 border border-neutral-700'
-                    }`}
-                  >
-                    <User
-                      size={16}
-                      className={`mx-auto mb-1 ${
+                  {/* Three-Way Lock Workflow Steps */}
+                  <div className="bg-neutral-800/50 rounded-xl p-4 mb-4">
+                    <p className="text-xs text-neutral-500 uppercase tracking-wider mb-3">Three-Way Lock Workflow</p>
+                    <div className="space-y-0">
+                      <StepIndicator
+                        label="Step 1: Producer Initiated"
+                        icon={<User size={18} />}
+                        approved={approval.producer_approved}
+                        approvedAt={approval.producer_approved_at}
+                        isLast={false}
+                      />
+                      <StepIndicator
+                        label="Step 2: Artist Approved"
+                        icon={<Music size={18} />}
+                        approved={approval.artist_approved}
+                        approvedAt={approval.artist_approved_at}
+                        isLast={false}
+                      />
+                      <StepIndicator
+                        label="Step 3: Association Witness (Final)"
+                        icon={<Shield size={18} />}
+                        approved={approval.association_approved}
+                        approvedAt={approval.association_approved_at}
+                        isLast={true}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Approval Actions */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* Producer Card */}
+                    <div
+                      className={`rounded-xl p-3 text-center ${
                         approval.producer_approved
-                          ? 'text-gold-400'
-                          : 'text-neutral-500'
+                          ? 'bg-green-500/10 border border-green-500/20'
+                          : 'bg-neutral-800 border border-neutral-700'
                       }`}
-                    />
-                    <p className="text-xs font-medium text-white">Producer</p>
-                    {approval.producer_approved ? (
-                      <>
-                        <p className="text-xs text-gold-400 mt-1">Approved</p>
-                        <p className="text-[10px] text-neutral-500 mt-0.5">
-                          {formatDateTime(approval.producer_approved_at)}
+                    >
+                      <User
+                        size={16}
+                        className={`mx-auto mb-1 ${
+                          approval.producer_approved ? 'text-green-400' : 'text-neutral-500'
+                        }`}
+                      />
+                      <p className="text-xs font-medium text-white">Producer</p>
+                      {approval.producer_approved ? (
+                        <p className="text-xs text-green-400 mt-1 flex items-center justify-center gap-1">
+                          <CheckCircle2 size={10} /> Approved
                         </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-xs text-neutral-500 mt-1">Waiting</p>
+                      ) : (
                         <button
                           onClick={() => handleApprove(approval, 'producer')}
                           disabled={approving === `${approval.id}-producer`}
                           className="mt-1 text-xs bg-gold-600 text-neutral-950 px-2 py-0.5 rounded hover:bg-gold-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {approving === `${approval.id}-producer`
-                            ? 'Approving...'
-                            : 'Approve'}
+                          {approving === `${approval.id}-producer` ? 'Approving...' : 'Approve'}
                         </button>
-                      </>
-                    )}
-                  </div>
+                      )}
+                    </div>
 
-                  {/* Artist Card */}
-                  <div
-                    className={`rounded-xl p-3 text-center ${
-                      approval.artist_approved
-                        ? 'bg-gold-500/10 border border-gold-500/20'
-                        : 'bg-neutral-800 border border-neutral-700'
-                    }`}
-                  >
-                    <Music
-                      size={16}
-                      className={`mx-auto mb-1 ${
+                    {/* Artist Card */}
+                    <div
+                      className={`rounded-xl p-3 text-center ${
                         approval.artist_approved
-                          ? 'text-gold-400'
-                          : 'text-neutral-500'
+                          ? 'bg-green-500/10 border border-green-500/20'
+                          : 'bg-neutral-800 border border-neutral-700'
                       }`}
-                    />
-                    <p className="text-xs font-medium text-white">Artist</p>
-                    {approval.artist_approved ? (
-                      <>
-                        <p className="text-xs text-gold-400 mt-1">Approved</p>
-                        <p className="text-[10px] text-neutral-500 mt-0.5">
-                          {formatDateTime(approval.artist_approved_at)}
+                    >
+                      <Music
+                        size={16}
+                        className={`mx-auto mb-1 ${
+                          approval.artist_approved ? 'text-green-400' : 'text-neutral-500'
+                        }`}
+                      />
+                      <p className="text-xs font-medium text-white">Artist</p>
+                      {approval.artist_approved ? (
+                        <p className="text-xs text-green-400 mt-1 flex items-center justify-center gap-1">
+                          <CheckCircle2 size={10} /> Approved
                         </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-xs text-neutral-500 mt-1">Waiting</p>
+                      ) : (
                         <button
                           onClick={() => handleApprove(approval, 'artist')}
                           disabled={approving === `${approval.id}-artist`}
                           className="mt-1 text-xs bg-gold-600 text-neutral-950 px-2 py-0.5 rounded hover:bg-gold-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {approving === `${approval.id}-artist`
-                            ? 'Approving...'
-                            : 'Approve'}
+                          {approving === `${approval.id}-artist` ? 'Approving...' : 'Approve'}
                         </button>
-                      </>
-                    )}
-                  </div>
+                      )}
+                    </div>
 
-                  {/* Association Card */}
-                  <div
-                    className={`rounded-xl p-3 text-center ${
-                      approval.association_approved
-                        ? 'bg-gold-500/10 border border-gold-500/20'
-                        : 'bg-neutral-800 border border-neutral-700'
-                    }`}
-                  >
-                    <Shield
-                      size={16}
-                      className={`mx-auto mb-1 ${
+                    {/* Association Card */}
+                    <div
+                      className={`rounded-xl p-3 text-center ${
                         approval.association_approved
-                          ? 'text-gold-400'
-                          : 'text-neutral-500'
+                          ? 'bg-green-500/10 border border-green-500/20'
+                          : 'bg-neutral-800 border border-neutral-700'
                       }`}
-                    />
-                    <p className="text-xs font-medium text-white">Association</p>
-                    {approval.association_approved ? (
-                      <>
-                        <p className="text-xs text-gold-400 mt-1">Approved</p>
-                        <p className="text-[10px] text-neutral-500 mt-0.5">
-                          {formatDateTime(approval.association_approved_at)}
+                    >
+                      <Shield
+                        size={16}
+                        className={`mx-auto mb-1 ${
+                          approval.association_approved ? 'text-green-400' : 'text-neutral-500'
+                        }`}
+                      />
+                      <p className="text-xs font-medium text-white">Association</p>
+                      {approval.association_approved ? (
+                        <p className="text-xs text-green-400 mt-1 flex items-center justify-center gap-1">
+                          <CheckCircle2 size={10} /> Approved
                         </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-xs text-neutral-500 mt-1">Waiting</p>
+                      ) : (
                         <button
                           onClick={() => handleApprove(approval, 'association')}
                           disabled={approving === `${approval.id}-association`}
                           className="mt-1 text-xs bg-gold-600 text-neutral-950 px-2 py-0.5 rounded hover:bg-gold-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {approving === `${approval.id}-association`
-                            ? 'Approving...'
-                            : 'Approve'}
+                          {approving === `${approval.id}-association` ? 'Approving...' : 'Seal Lock'}
                         </button>
-                      </>
-                    )}
+                      )}
+                    </div>
                   </div>
+
+                  {/* Pending Association Finalization Notice */}
+                  {approval.producer_approved && approval.artist_approved && !approval.association_approved && (
+                    <div className="mt-3 bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 flex items-start gap-3">
+                      <Shield size={16} className="text-blue-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-blue-400 font-medium">Awaiting Association Finalization</p>
+                        <p className="text-xs text-neutral-400 mt-0.5">
+                          Producer and Artist have both approved. The PAEAM Association Witness must now seal the lock to make this record immutable.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -367,22 +426,23 @@ export default function LockApprovals() {
                       {approval.record_id}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 text-xs text-gold-400">
-                    <CheckCircle2 size={14} />
-                    Locked
+                  <div className="flex items-center gap-1.5 text-xs text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2.5 py-1 rounded-full">
+                    <Lock size={12} /> Fully Locked
                   </div>
                 </div>
 
-                {/* Three checkmarks */}
-                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                  <div className="flex items-center gap-1 text-gold-400">
-                    <CheckCircle2 size={12} /> Producer
+                {/* Three checkmarks with workflow */}
+                <div className="mt-3 flex items-center gap-2 text-xs">
+                  <div className="flex items-center gap-1 text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded-full">
+                    <CheckCircle2 size={10} /> Producer
                   </div>
-                  <div className="flex items-center gap-1 text-gold-400">
-                    <CheckCircle2 size={12} /> Artist
+                  <ArrowRight size={12} className="text-neutral-600" />
+                  <div className="flex items-center gap-1 text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded-full">
+                    <CheckCircle2 size={10} /> Artist
                   </div>
-                  <div className="flex items-center gap-1 text-gold-400">
-                    <CheckCircle2 size={12} /> Association
+                  <ArrowRight size={12} className="text-neutral-600" />
+                  <div className="flex items-center gap-1 text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded-full">
+                    <CheckCircle2 size={10} /> Association
                   </div>
                 </div>
 
