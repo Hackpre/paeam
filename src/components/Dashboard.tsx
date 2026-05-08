@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../lib/auth';
+import { useNavigate } from 'react-router-dom';
 import {
   Disc3,
   FileText,
@@ -10,89 +10,58 @@ import {
   Clock,
   CheckCircle2,
   AlertTriangle,
+  CreditCard,
+  AlertCircle,
 } from 'lucide-react';
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [catalogCount, setCatalogCount] = useState(0);
-  const [contractCount, setContractCount] = useState(0);
-  const [lockedCount, setLockedCount] = useState(0);
-  const [pendingCount, setPendingCount] = useState(0);
+  const [pendingSongsCount, setPendingSongsCount] = useState(0);
   const [recentCatalog, setRecentCatalog] = useState<any[]>([]);
-  const [profile, setProfile] = useState({ stage_name: 'Sir EL-Phi', verification: 'pending' });
+  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'pending' | null>('pending');
+  const [profile, setProfile] = useState<any>(null);
 
-  // Load data from localStorage on mount
   useEffect(() => {
-    // Load catalog
-    const savedCatalog = localStorage.getItem('paeam_catalog');
-    if (savedCatalog) {
-      const catalog = JSON.parse(savedCatalog);
-      setCatalogCount(catalog.length);
-      setRecentCatalog(catalog.slice(0, 5));
+    const storedUser = localStorage.getItem('paeam_user');
+    const storedPaid = localStorage.getItem('paeam_paid');
+    
+    if (storedUser) {
+      setProfile(JSON.parse(storedUser));
     }
-
-    // Load contracts
-    const savedContracts = localStorage.getItem('paeam_contracts');
-    if (savedContracts) {
-      setContractCount(JSON.parse(savedContracts).length);
+    
+    if (storedPaid === 'true') {
+      setPaymentStatus('paid');
     }
-
-    // Load lock requests
-    const savedLocks = localStorage.getItem('paeam_lock_requests');
-    if (savedLocks) {
-      const locks = JSON.parse(savedLocks);
-      setPendingCount(locks.filter((l: any) => l.status === 'pending').length);
-      setLockedCount(locks.filter((l: any) => l.status === 'fully_locked').length);
-    }
-
-    // Load user profile
-    const savedUser = localStorage.getItem('paeam_user');
-    if (savedUser) {
-      const userData = JSON.parse(savedUser);
-      setProfile({ stage_name: userData.stageName || userData.fullName?.split(' ')[0] || 'Producer', verification: 'pending' });
-    }
-
+    
+    const songs = JSON.parse(localStorage.getItem('paeam_songs') || '[]');
+    const pending = songs.filter((s: any) => s.status === 'pending_approval').length;
+    
+    setCatalogCount(songs.length);
+    setPendingSongsCount(pending);
+    setRecentCatalog(songs.slice(0, 5));
     setLoading(false);
   }, []);
 
-  // Listen for catalog updates from Catalog module
-  useEffect(() => {
-    const handleCatalogUpdate = () => {
-      const saved = localStorage.getItem('paeam_catalog');
-      if (saved) {
-        const catalog = JSON.parse(saved);
-        setCatalogCount(catalog.length);
-        setRecentCatalog(catalog.slice(0, 5));
-      }
-    };
-
-    const handleContractUpdate = () => {
-      const saved = localStorage.getItem('paeam_contracts');
-      if (saved) {
-        setContractCount(JSON.parse(saved).length);
-      }
-    };
-
-    const handleLockUpdate = () => {
-      const saved = localStorage.getItem('paeam_lock_requests');
-      if (saved) {
-        const locks = JSON.parse(saved);
-        setPendingCount(locks.filter((l: any) => l.status === 'pending').length);
-        setLockedCount(locks.filter((l: any) => l.status === 'fully_locked').length);
-      }
-    };
-
-    window.addEventListener('catalogUpdated', handleCatalogUpdate);
-    window.addEventListener('contractUpdated', handleContractUpdate);
-    window.addEventListener('lockUpdated', handleLockUpdate);
-    
-    return () => {
-      window.removeEventListener('catalogUpdated', handleCatalogUpdate);
-      window.removeEventListener('contractUpdated', handleContractUpdate);
-      window.removeEventListener('lockUpdated', handleLockUpdate);
-    };
-  }, []);
+  const handleAddSong = () => {
+    const title = prompt('Enter song title:');
+    if (title) {
+      const newSong = {
+        id: Date.now(),
+        title,
+        status: paymentStatus === 'paid' ? 'approved' : 'pending_approval',
+        createdAt: new Date().toISOString(),
+      };
+      const songs = JSON.parse(localStorage.getItem('paeam_songs') || '[]');
+      songs.push(newSong);
+      localStorage.setItem('paeam_songs', JSON.stringify(songs));
+      setCatalogCount(songs.length);
+      setPendingSongsCount(songs.filter((s: any) => s.status === 'pending_approval').length);
+      setRecentCatalog(songs.slice(0, 5));
+      alert(paymentStatus === 'paid' ? 'Song added!' : 'Song submitted for approval.');
+    }
+  };
 
   if (loading) {
     return (
@@ -104,9 +73,9 @@ export default function Dashboard() {
 
   const stats = [
     { label: 'Catalog Entries', value: catalogCount, icon: <Disc3 size={20} />, color: 'gold' },
-    { label: 'Contracts', value: contractCount, icon: <FileText size={20} />, color: 'blue' },
-    { label: 'Locked Records', value: lockedCount, icon: <Lock size={20} />, color: 'amber' },
-    { label: 'Pending Approvals', value: pendingCount, icon: <Clock size={20} />, color: 'rose' },
+    { label: 'Contracts', value: 0, icon: <FileText size={20} />, color: 'blue' },
+    { label: 'Locked Records', value: 0, icon: <Lock size={20} />, color: 'amber' },
+    { label: 'Pending Approval', value: pendingSongsCount, icon: <Clock size={20} />, color: 'rose' },
   ];
 
   const colorMap: Record<string, string> = {
@@ -118,28 +87,54 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Welcome Section */}
+      {paymentStatus === 'pending' && (
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle size={24} className="text-yellow-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-yellow-500 font-semibold">⚠️ Payment Pending</p>
+              <p className="text-neutral-400 text-sm">Your membership fee of 15,000 MWK is pending.</p>
+            </div>
+          </div>
+          <button onClick={() => navigate('/payment')} className="px-4 py-2 bg-gold-600 hover:bg-gold-500 text-black font-semibold rounded-lg text-sm">Complete Payment</button>
+        </div>
+      )}
+
+      {paymentStatus === 'paid' && (
+        <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 size={24} className="text-green-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-green-500 font-semibold">✓ Payment Confirmed</p>
+              <p className="text-neutral-400 text-sm">Your membership is active.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-gradient-to-r from-neutral-900 to-neutral-800 border border-neutral-700 rounded-2xl p-6">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center text-xl font-bold text-neutral-950">
-            {profile.stage_name?.charAt(0).toUpperCase() || 'P'}
+            {profile?.fullName?.charAt(0).toUpperCase() || 'P'}
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-white">{profile.stage_name || 'Producer'}</h2>
-            {profile.verification === 'pending' ? (
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                <Clock size={12} /> Pending Verification
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-gold-400 bg-gold-500/10 px-2 py-0.5 rounded-full">
-                <CheckCircle2 size={12} /> Verified Producer
-              </span>
-            )}
+            <h2 className="text-2xl font-bold text-white">{profile?.fullName || 'Producer'}</h2>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {paymentStatus === 'pending' && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                  <CreditCard size={12} /> Payment Pending
+                </span>
+              )}
+              {paymentStatus === 'paid' && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">
+                  <CheckCircle2 size={12} /> Active Member
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
           <div key={stat.label} className={`bg-gradient-to-br ${colorMap[stat.color]} border rounded-2xl p-4`}>
@@ -152,16 +147,27 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Recent Catalog */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-white">Quick Actions</h3>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <button onClick={handleAddSong} className="p-4 bg-neutral-800 rounded-xl text-left hover:bg-neutral-700 transition-colors">
+            <div className="text-2xl mb-2">🎵</div>
+            <p className="text-white font-semibold">Upload New Song</p>
+            <p className="text-neutral-400 text-sm">Register a new song with metadata</p>
+          </button>
+          <button className="p-4 bg-neutral-800 rounded-xl text-left hover:bg-neutral-700 transition-colors">
+            <div className="text-2xl mb-2">📄</div>
+            <p className="text-white font-semibold">Create Contract</p>
+            <p className="text-neutral-400 text-sm">Set up royalty agreements</p>
+          </button>
+        </div>
+      </div>
+
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
           <h3 className="font-semibold text-white">Recent Catalog</h3>
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'catalog' }))}
-            className="text-sm text-gold-400 hover:text-gold-300"
-          >
-            View All
-          </button>
         </div>
         {recentCatalog.length === 0 ? (
           <div className="p-8 text-center text-neutral-500">
@@ -177,16 +183,15 @@ export default function Dashboard() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-white truncate">{entry.title}</p>
-                  <p className="text-xs text-neutral-500">{entry.artist} - {entry.genre}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {entry.isLocked ? (
-                    <span className="flex items-center gap-1 text-xs text-gold-400">
-                      <Lock size={12} /> Locked
+                  {entry.status === 'pending_approval' ? (
+                    <span className="flex items-center gap-1 text-xs text-yellow-400">
+                      <Clock size={12} /> Pending Approval
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1 text-xs text-amber-400">
-                      <AlertTriangle size={12} /> Unlocked
+                    <span className="flex items-center gap-1 text-xs text-green-400">
+                      <CheckCircle2 size={12} /> Approved
                     </span>
                   )}
                 </div>
@@ -196,7 +201,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Security Overview */}
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
         <div className="flex items-center gap-3 mb-4">
           <Shield size={20} className="text-gold-400" />
@@ -208,7 +212,7 @@ export default function Dashboard() {
               <Lock size={16} className="text-gold-400" />
               <span className="text-sm font-medium text-white">Three-Way Lock</span>
             </div>
-            <p className="text-xs text-neutral-400">{lockedCount} records secured with multi-signature approval</p>
+            <p className="text-xs text-neutral-400">Records secured with multi-signature approval</p>
           </div>
           <div className="bg-neutral-800 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -222,16 +226,9 @@ export default function Dashboard() {
               <Shield size={16} className="text-amber-400" />
               <span className="text-sm font-medium text-white">Content Hash</span>
             </div>
-            <p className="text-xs text-neutral-400">SHA-256 verification on all locked records</p>
+            <p className="text-xs text-neutral-400">SHA-256 verification on locked records</p>
           </div>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div className="text-center text-neutral-500 text-xs pt-4 border-t border-neutral-800">
-        <p>Producers & Audio Engineering Association of Malawi — Official Digital Registry</p>
-        <p className="mt-1">Secure Rights Management | Immutable Record Keeping | Three-Way Lock Protection</p>
-        <p className="mt-2">© 2026 PAEAM. All rights reserved. Built for the music producers of Malawi.</p>
       </div>
     </div>
   );

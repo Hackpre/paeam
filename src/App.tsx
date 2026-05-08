@@ -10,23 +10,18 @@ import Contracts from './components/Contracts';
 import LockApprovals from './components/LockApprovals';
 import AuditTrail from './components/AuditTrail';
 import Payment from './components/Payment';
-import AdminDashboard from './components/AdminDashboard';
 
 type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment';
-type AppView = 'landing' | 'auth' | 'app' | 'payment' | 'admin';
+type AppView = 'landing' | 'auth' | 'app' | 'payment';
 
 function AppContent() {
   const { user, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [view, setView] = useState<AppView>('landing');
-  const [isAdmin, setIsAdmin] = useState(true); // Set to true for testing, change based on user role
 
   useEffect(() => {
     if (user) {
-      // Check if user is admin based on email
-      const isAdminUser = user.email === 'admin@paeam.mw' || user.email === 'austinpreciousphiri@gmail.com';
-      setIsAdmin(true); // For testing, set to true. Change to isAdminUser in production
-      
+      // Check if payment is pending
       const paymentStatus = localStorage.getItem('paeam_paid');
       if (paymentStatus === 'false' || !paymentStatus) {
         setView('payment');
@@ -36,16 +31,10 @@ function AppContent() {
     }
   }, [user]);
 
-  // Listen for navigation events
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail === 'admin') {
-        setView('admin');
-      } else if (detail === 'dashboard' || detail === 'profile' || detail === 'catalog' || detail === 'contracts' || detail === 'locks' || detail === 'audit') {
-        setCurrentPage(detail as Page);
-        setView('app');
-      }
+      if (detail) setCurrentPage(detail as Page);
     };
     window.addEventListener('navigate', handler);
     return () => window.removeEventListener('navigate', handler);
@@ -68,42 +57,31 @@ function AppContent() {
     );
   }
 
-  if (view === 'auth') {
-    return <Auth onSuccess={() => setView('payment')} />;
+  if (view === 'auth' && !user) {
+    return <Auth />;
   }
 
   if (view === 'payment') {
     return <Payment onComplete={() => setView('app')} />;
   }
 
-  if (view === 'admin') {
-    return <AdminDashboard />;
-  }
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'dashboard': return <Dashboard />;
+      case 'profile': return <ProducerProfilePage />;
+      case 'catalog': return <Catalog />;
+      case 'contracts': return <Contracts />;
+      case 'locks': return <LockApprovals />;
+      case 'audit': return <AuditTrail />;
+      default: return <Dashboard />;
+    }
+  };
 
-  if (view === 'app') {
-    const renderPage = () => {
-      switch (currentPage) {
-        case 'dashboard': return <Dashboard />;
-        case 'profile': return <ProducerProfilePage />;
-        case 'catalog': return <Catalog />;
-        case 'contracts': return <Contracts />;
-        case 'locks': return <LockApprovals />;
-        case 'audit': return <AuditTrail />;
-        default: return <Dashboard />;
-      }
-    };
-
-    return (
-      <Layout currentPage={currentPage} onNavigate={(page: string) => {
-        setCurrentPage(page as Page);
-        setView('app');
-      }} isAdmin={isAdmin}>
-        {renderPage()}
-      </Layout>
-    );
-  }
-
-  return null;
+  return (
+    <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
+      {renderPage()}
+    </Layout>
+  );
 }
 
 function App() {
