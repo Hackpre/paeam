@@ -170,12 +170,6 @@ export default function PaymentModal({ isOpen, onClose, amount, paymentType }: P
         throw new Error('Failed to upload proof: ' + uploadError.message);
       }
 
-      const { data: urlData } = supabase.storage
-        .from('payment-proofs')
-        .getPublicUrl(filePath);
-
-      const proofUrl = urlData.publicUrl;
-
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pay`;
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -187,7 +181,7 @@ export default function PaymentModal({ isOpen, onClose, amount, paymentType }: P
           action: 'bank_transfer',
           payment_type: type,
           amount: amountDue,
-          proof_url: proofUrl,
+          proof_url: filePath,
         }),
       });
 

@@ -78,6 +78,21 @@ export default function AdminDashboard() {
 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [proofModalUrl, setProofModalUrl] = useState<string | null>(null);
+
+  const viewProof = async (filePath: string) => {
+    try {
+      const { data } = await supabase.storage
+        .from('payment-proofs')
+        .createSignedUrl(filePath, 3600);
+      if (data?.signedUrl) {
+        setProofModalUrl(data.signedUrl);
+      } else {
+        alert('Unable to generate access link for this proof.');
+      }
+    } catch {
+      alert('Error accessing proof file.');
+    }
+  };
   const [confirmModal, setConfirmModal] = useState<{ paymentId: string; action: 'approved' | 'rejected' } | null>(null);
   const [confirmNotes, setConfirmNotes] = useState('');
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -951,7 +966,7 @@ export default function AdminDashboard() {
                         <div className="flex flex-col gap-2 flex-shrink-0">
                           {payment.proof_of_payment_url && (
                             <button
-                              onClick={() => setProofModalUrl(payment.proof_of_payment_url)}
+                              onClick={() => viewProof(payment.proof_of_payment_url)}
                               className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-1.5 text-sm"
                             >
                               <Eye size={14} /> View Proof
@@ -1050,7 +1065,7 @@ export default function AdminDashboard() {
                                   <>
                                     {payment.proof_of_payment_url && (
                                       <button
-                                        onClick={() => setProofModalUrl(payment.proof_of_payment_url)}
+                                        onClick={() => viewProof(payment.proof_of_payment_url)}
                                         className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold rounded-md transition-colors flex items-center gap-1"
                                       >
                                         <Eye size={12} /> Proof

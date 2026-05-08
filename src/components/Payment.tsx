@@ -291,7 +291,17 @@ export default function Payment() {
                               {payment.proof_of_payment_url && (
                                 <div className="flex justify-between text-xs">
                                   <span className="text-neutral-500">Proof</span>
-                                  <a href={payment.proof_of_payment_url} target="_blank" rel="noopener noreferrer" className="text-gold-400 hover:underline">View Proof</a>
+                                  <button
+                                    onClick={async () => {
+                                      const { data } = await supabase.storage
+                                        .from('payment-proofs')
+                                        .createSignedUrl(payment.proof_of_payment_url, 3600);
+                                      if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+                                    }}
+                                    className="text-gold-400 hover:underline"
+                                  >
+                                    View Proof
+                                  </button>
                                 </div>
                               )}
                             </div>
