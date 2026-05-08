@@ -214,6 +214,15 @@ export default function Contracts() {
 
       if (error) throw error;
 
+      // Audit log
+      await supabase.from('audit_logs').insert({
+        actor_id: user?.id || '',
+        action: 'create',
+        record_type: 'contract',
+        record_id: contractData?.id || '',
+        new_data: { contract_type: form.contract_type, territory: territoryValue, royalty_percentage: form.royalty_percentage },
+      });
+
       if (contractData && recipients.length > 0) {
         const splitInserts = recipients
           .filter((r) => r.name.trim() !== '')

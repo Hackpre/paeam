@@ -7,7 +7,6 @@ import {
   Users,
   UserCheck,
   CreditCard,
-  Clock,
   Music,
   FileText,
   AlertTriangle,
@@ -19,9 +18,16 @@ import {
   Activity,
   ArrowRight,
   ChevronDown,
+  Lock,
+  TrendingUp,
+  Calendar,
+  Search,
+  Filter,
 } from 'lucide-react';
 
 type TabKey = 'overview' | 'producers' | 'payments' | 'content' | 'disputes' | 'users';
+type VerificationFilter = 'all' | 'pending' | 'verified' | 'rejected' | 'suspended';
+type PaymentFilter = 'all' | 'pending' | 'completed' | 'failed';
 
 const ROLES: UserRoleAssignment['role'][] = [
   'super_admin',
@@ -47,12 +53,24 @@ export default function AdminDashboard() {
   const [userRoles, setUserRoles] = useState<UserRoleAssignment[]>([]);
   const [recentActivity, setRecentActivity] = useState<{ type: string; description: string; time: string }[]>([]);
 
-  // Stats
+  // Filter states
+  const [producerSearch, setProducerSearch] = useState('');
+  const [verificationFilter, setVerificationFilter] = useState<VerificationFilter>('all');
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all');
+
+  // Role change states
+  const [roleUpdates, setRoleUpdates] = useState<Record<string, UserRoleAssignment['role']>>({});
+
+  // Stats - 8 overview cards
   const [stats, setStats] = useState({
     totalProducers: 0,
-    activeMembers: 0,
-    totalRevenue: 0,
-    pendingApprovals: 0,
+    pendingVerifications: 0,
+    pendingPayments: 0,
+    totalSongs: 0,
+    totalContracts: 0,
+    lockedRecords: 0,
+    monthlyRevenue: 0,
+    annualRevenue: 0,
   });
 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -62,38 +80,62 @@ export default function AdminDashboard() {
       .from('producer_profiles')
       .select('*', { count: 'exact', head: true });
 
-    const { count: activeMembers } = await supabase
-      .from('producer_profiles')
-      .select('*', { count: 'exact', head: true })
-      .eq('membership_status', 'active');
-
-    const { data: completedPayments } = await supabase
-      .from('payments')
-      .select('amount')
-      .eq('status', 'completed');
-
-    const totalRevenue = (completedPayments ?? []).reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    const { count: pendingCats } = await supabase
-      .from('catalog_entries')
-      .select('*', { count: 'exact', head: true })
-      .eq('approval_status', 'pending');
-
-    const { count: pendingContracts } = await supabase
-      .from('contracts')
-      .select('*', { count: 'exact', head: true })
-      .eq('approval_status', 'pending');
-
     const { count: pendingVerifications } = await supabase
       .from('producer_profiles')
       .select('*', { count: 'exact', head: true })
       .eq('association_verification_status', 'pending');
 
+    const { count: pendingPayments } = await supabase
+      .from('payments')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending');
+
+    const { count: totalSongs } = await supabase
+      .from('catalog_entries')
+      .select('*', { count: 'exact', head: true });
+
+    const { count: totalContracts } = await supabase
+      .from('contracts')
+      .select('*', { count: 'exact', head: true });
+
+    const { count: lockedCatalog } = await supabase
+      .from('catalog_entries')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_locked', true);
+
+    const { count: lockedContracts } = await supabase
+      .from('contracts')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_locked', true);
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const startOfYear = new Date(now.getFullYear(), 0, 1).toISOString();
+
+    const { data: monthlyPayments } = await supabase
+      .from('payments')
+      .select('amount')
+      .eq('status', 'completed')
+      .gte('created_at', startOfMonth);
+
+    const { data: annualPayments } = await supabase
+      .from('payments')
+      .select('amount')
+      .eq('status', 'completed')
+      .gte('created_at', startOfYear);
+
+    const monthlyRevenue = (monthlyPayments ?? []).reduce((sum, p) => sum + (p.amount || 0), 0);
+    const annualRevenue = (annualPayments ?? []).reduce((sum, p) => sum + (p.amount || 0), 0);
+
     setStats({
       totalProducers: totalProducers || 0,
-      activeMembers: activeMembers || 0,
-      totalRevenue,
-      pendingApprovals: (pendingCats || 0) + (pendingContracts || 0) + (pendingVerifications || 0),
+      pendingVerifications: pendingVerifications || 0,
+      pendingPayments: pendingPayments || 0,
+      totalSongs: totalSongs || 0,
+      totalContracts: totalContracts || 0,
+      lockedRecords: (lockedCatalog || 0) + (lockedContracts || 0),
+      monthlyRevenue,
+      annualRevenue,
     });
   }, []);
 
@@ -136,9 +178,32 @@ export default function AdminDashboard() {
       .select('*')
       .order('assigned_at', { ascending: false });
     setUserRoles(data || []);
+    // Initialize role update states
+    const updates: Record<string, UserRoleAssignment['role']> = {};
+    (data || []).forEach((ur: UserRoleAssignment) => {
+      updates[ur.id] = ur.role;
+    });
+    setRoleUpdates(updates);
   }, []);
 
   const loadRecentActivity = useCallback(async () => {
+    const { data: auditLogs } = await supabase
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (auditLogs && auditLogs.length > 0) {
+      const activities = auditLogs.map((log) => ({
+        type: log.record_type || log.action || 'system',
+        description: `${log.action} on ${log.record_type}${log.record_id ? ` (${log.record_id.substring(0, 8)}...)` : ''}`,
+        time: log.created_at,
+      }));
+      setRecentActivity(activities);
+      return;
+    }
+
+    // Fallback: compose from individual tables if audit_logs is empty
     const activities: { type: string; description: string; time: string }[] = [];
 
     const { data: recentPayments } = await supabase
@@ -150,7 +215,7 @@ export default function AdminDashboard() {
     (recentPayments ?? []).forEach((p) => {
       activities.push({
         type: 'payment',
-        description: `${p.payment_type} payment - ${formatCurrency(p.amount)} (${p.status})`,
+        description: `${p.payment_type.replace(/_/g, ' ')} payment - ${formatCurrency(p.amount)} (${p.status})`,
         time: p.created_at,
       });
     });
@@ -164,7 +229,7 @@ export default function AdminDashboard() {
     (recentDisputes ?? []).forEach((d) => {
       activities.push({
         type: 'dispute',
-        description: `${d.dispute_type} dispute filed (${d.status})`,
+        description: `${d.dispute_type.replace(/_/g, ' ')} dispute filed (${d.status.replace(/_/g, ' ')})`,
         time: d.created_at,
       });
     });
@@ -184,7 +249,7 @@ export default function AdminDashboard() {
     });
 
     activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-    setRecentActivity(activities.slice(0, 15));
+    setRecentActivity(activities.slice(0, 10));
   }, []);
 
   const loadAllData = useCallback(async () => {
@@ -248,8 +313,7 @@ export default function AdminDashboard() {
     if (error) {
       alert('Error approving verification: ' + error.message);
     } else {
-      await loadProducers();
-      await loadOverviewStats();
+      await Promise.all([loadProducers(), loadOverviewStats()]);
     }
     setActionLoading(null);
   };
@@ -265,13 +329,28 @@ export default function AdminDashboard() {
     if (error) {
       alert('Error rejecting verification: ' + error.message);
     } else {
-      await loadProducers();
-      await loadOverviewStats();
+      await Promise.all([loadProducers(), loadOverviewStats()]);
     }
     setActionLoading(null);
   };
 
-  const confirmPayment = async (paymentId: string) => {
+  const confirmMembershipPayment = async (producerId: string) => {
+    setActionLoading(producerId);
+    const { error } = await supabase
+      .from('producer_profiles')
+      .update({
+        membership_status: 'active',
+      })
+      .eq('id', producerId);
+    if (error) {
+      alert('Error confirming membership: ' + error.message);
+    } else {
+      await Promise.all([loadProducers(), loadOverviewStats()]);
+    }
+    setActionLoading(null);
+  };
+
+  const confirmPayment = async (paymentId: string, producerId: string | null) => {
     setActionLoading(paymentId);
     const { error } = await supabase
       .from('payments')
@@ -283,8 +362,14 @@ export default function AdminDashboard() {
     if (error) {
       alert('Error confirming payment: ' + error.message);
     } else {
-      await loadPayments();
-      await loadOverviewStats();
+      // If this is a membership payment, also update the producer's membership status
+      if (producerId) {
+        await supabase
+          .from('producer_profiles')
+          .update({ membership_status: 'active' })
+          .eq('id', producerId);
+      }
+      await Promise.all([loadPayments(), loadOverviewStats()]);
     }
     setActionLoading(null);
   };
@@ -302,26 +387,26 @@ export default function AdminDashboard() {
     if (error) {
       alert('Error approving catalog entry: ' + error.message);
     } else {
-      await loadContent();
-      await loadOverviewStats();
+      await Promise.all([loadContent(), loadOverviewStats()]);
     }
     setActionLoading(null);
   };
 
   const rejectCatalogEntry = async (entryId: string) => {
+    const reason = prompt('Enter rejection reason:');
+    if (!reason) return;
     setActionLoading(entryId);
     const { error } = await supabase
       .from('catalog_entries')
       .update({
         approval_status: 'rejected',
-        rejection_reason: 'Did not meet requirements',
+        rejection_reason: reason,
       })
       .eq('id', entryId);
     if (error) {
       alert('Error rejecting catalog entry: ' + error.message);
     } else {
-      await loadContent();
-      await loadOverviewStats();
+      await Promise.all([loadContent(), loadOverviewStats()]);
     }
     setActionLoading(null);
   };
@@ -339,37 +424,34 @@ export default function AdminDashboard() {
     if (error) {
       alert('Error approving contract: ' + error.message);
     } else {
-      await loadContent();
-      await loadOverviewStats();
+      await Promise.all([loadContent(), loadOverviewStats()]);
     }
     setActionLoading(null);
   };
 
   const rejectContract = async (contractId: string) => {
+    const reason = prompt('Enter rejection reason:');
+    if (!reason) return;
     setActionLoading(contractId);
     const { error } = await supabase
       .from('contracts')
       .update({
         approval_status: 'rejected',
-        rejection_reason: 'Did not meet requirements',
+        rejection_reason: reason,
       })
       .eq('id', contractId);
     if (error) {
       alert('Error rejecting contract: ' + error.message);
     } else {
-      await loadContent();
-      await loadOverviewStats();
+      await Promise.all([loadContent(), loadOverviewStats()]);
     }
     setActionLoading(null);
   };
 
   const resolveDispute = async (disputeId: string) => {
-    setActionLoading(disputeId);
     const resolution = prompt('Enter resolution details:');
-    if (!resolution) {
-      setActionLoading(null);
-      return;
-    }
+    if (!resolution) return;
+    setActionLoading(disputeId);
     const { error } = await supabase
       .from('disputes')
       .update({
@@ -387,7 +469,9 @@ export default function AdminDashboard() {
     setActionLoading(null);
   };
 
-  const changeUserRole = async (assignmentId: string, newRole: UserRoleAssignment['role']) => {
+  const handleUpdateRole = async (assignmentId: string) => {
+    const newRole = roleUpdates[assignmentId];
+    if (!newRole) return;
     setActionLoading(assignmentId);
     const { error } = await supabase
       .from('user_roles')
@@ -400,6 +484,25 @@ export default function AdminDashboard() {
     }
     setActionLoading(null);
   };
+
+  // --- Filtered lists ---
+
+  const filteredProducers = producers.filter((p) => {
+    const matchesSearch = producerSearch === '' ||
+      p.full_legal_name.toLowerCase().includes(producerSearch.toLowerCase()) ||
+      p.email.toLowerCase().includes(producerSearch.toLowerCase()) ||
+      p.stage_name.toLowerCase().includes(producerSearch.toLowerCase());
+    const matchesVerification = verificationFilter === 'all' ||
+      p.association_verification_status === verificationFilter;
+    return matchesSearch && matchesVerification;
+  });
+
+  const filteredPayments = payments.filter((p) => {
+    return paymentFilter === 'all' || p.status === paymentFilter;
+  });
+
+  const pendingCatalogEntries = catalogEntries.filter((e) => e.approval_status === 'pending');
+  const pendingContracts = contracts.filter((c) => c.approval_status === 'pending');
 
   // --- Helpers ---
 
@@ -475,8 +578,22 @@ export default function AdminDashboard() {
         return <AlertTriangle size={16} className="text-red-400" />;
       case 'producer':
         return <Users size={16} className="text-green-400" />;
+      case 'catalog_entry':
+        return <Music size={16} className="text-gold-500" />;
+      case 'contract':
+        return <FileText size={16} className="text-gold-600" />;
       default:
         return <Activity size={16} className="text-neutral-400" />;
+    }
+  };
+
+  const paymentMethodLabel = (method: string): string => {
+    switch (method) {
+      case 'airtel_money': return 'Airtel Money';
+      case 'tnm_mpamba': return 'TNM Mpamba';
+      case 'national_bank': return 'National Bank';
+      case 'card': return 'Card';
+      default: return method || 'N/A';
     }
   };
 
@@ -504,50 +621,27 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-neutral-950 p-6">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Admin Dashboard</h1>
-        <p className="text-neutral-400">PAEAM administration -- manage producers, payments, content, disputes, and users</p>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <Users size={20} className="text-gold-400" />
-            <span className="text-neutral-400 text-sm">Total Producers</span>
-          </div>
-          <p className="text-3xl font-bold text-white">{stats.totalProducers}</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white mb-2">Admin Dashboard</h1>
+          <p className="text-neutral-400">PAEAM administration -- manage producers, payments, content, disputes, and users</p>
         </div>
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <UserCheck size={20} className="text-gold-500" />
-            <span className="text-neutral-400 text-sm">Active Members</span>
-          </div>
-          <p className="text-3xl font-bold text-gold-400">{stats.activeMembers}</p>
-        </div>
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <CreditCard size={20} className="text-gold-600" />
-            <span className="text-neutral-400 text-sm">Total Revenue</span>
-          </div>
-          <p className="text-3xl font-bold text-white">{formatCurrency(stats.totalRevenue)}</p>
-        </div>
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <Clock size={20} className="text-gold-700" />
-            <span className="text-neutral-400 text-sm">Pending Approvals</span>
-          </div>
-          <p className="text-3xl font-bold text-gold-400">{stats.pendingApprovals}</p>
-        </div>
+        <button
+          onClick={refreshTab}
+          className="px-3 py-2 text-neutral-400 hover:text-gold-400 transition-colors border border-neutral-800 rounded-lg hover:border-gold-600/50"
+          title="Refresh current tab"
+        >
+          <RefreshCw size={18} />
+        </button>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex items-center gap-2 mb-6 border-b border-neutral-800 pb-2">
+      <div className="flex items-center gap-2 mb-6 border-b border-neutral-800 pb-2 overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
               activeTab === tab.key
                 ? 'bg-gold-600 text-neutral-950'
                 : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
@@ -557,79 +651,88 @@ export default function AdminDashboard() {
             {tab.label}
           </button>
         ))}
-        <button
-          onClick={refreshTab}
-          className="ml-auto px-3 py-2 text-neutral-400 hover:text-gold-400 transition-colors"
-          title="Refresh current tab"
-        >
-          <RefreshCw size={18} />
-        </button>
       </div>
 
       {/* ===== Overview Tab ===== */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* Module Counts */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">Catalog Entries</h3>
-                <Music size={20} className="text-gold-400" />
+          {/* 8 Stat Cards in 2 rows of 4 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Row 1 */}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-gold-500/10 flex items-center justify-center">
+                  <Users size={20} className="text-gold-400" />
+                </div>
+                <span className="text-neutral-400 text-sm">Total Producers</span>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-neutral-400">Approved</span>
-                  <span className="text-green-400">{catalogEntries.filter((e) => e.approval_status === 'approved').length}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-neutral-400">Pending</span>
-                  <span className="text-gold-400">{catalogEntries.filter((e) => e.approval_status === 'pending').length}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-neutral-400">Rejected</span>
-                  <span className="text-red-400">{catalogEntries.filter((e) => e.approval_status === 'rejected').length}</span>
-                </div>
-              </div>
+              <p className="text-3xl font-bold text-white">{stats.totalProducers}</p>
             </div>
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">Contracts</h3>
-                <FileText size={20} className="text-gold-400" />
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-gold-500/10 flex items-center justify-center">
+                  <UserCheck size={20} className="text-gold-500" />
+                </div>
+                <span className="text-neutral-400 text-sm">Pending Verifications</span>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-neutral-400">Approved</span>
-                  <span className="text-green-400">{contracts.filter((c) => c.approval_status === 'approved').length}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-neutral-400">Pending</span>
-                  <span className="text-gold-400">{contracts.filter((c) => c.approval_status === 'pending').length}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-neutral-400">Rejected</span>
-                  <span className="text-red-400">{contracts.filter((c) => c.approval_status === 'rejected').length}</span>
-                </div>
-              </div>
+              <p className="text-3xl font-bold text-gold-400">{stats.pendingVerifications}</p>
             </div>
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">Disputes</h3>
-                <AlertTriangle size={20} className="text-gold-400" />
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-gold-500/10 flex items-center justify-center">
+                  <CreditCard size={20} className="text-gold-600" />
+                </div>
+                <span className="text-neutral-400 text-sm">Pending Payments</span>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-neutral-400">Resolved</span>
-                  <span className="text-green-400">{disputes.filter((d) => d.status === 'resolved').length}</span>
+              <p className="text-3xl font-bold text-gold-400">{stats.pendingPayments}</p>
+            </div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-gold-500/10 flex items-center justify-center">
+                  <Music size={20} className="text-gold-700" />
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-neutral-400">Open</span>
-                  <span className="text-gold-400">{disputes.filter((d) => d.status !== 'resolved' && d.status !== 'dismissed').length}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-neutral-400">Dismissed</span>
-                  <span className="text-neutral-400">{disputes.filter((d) => d.status === 'dismissed').length}</span>
-                </div>
+                <span className="text-neutral-400 text-sm">Total Songs</span>
               </div>
+              <p className="text-3xl font-bold text-white">{stats.totalSongs}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Row 2 */}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-gold-500/10 flex items-center justify-center">
+                  <FileText size={20} className="text-gold-400" />
+                </div>
+                <span className="text-neutral-400 text-sm">Total Contracts</span>
+              </div>
+              <p className="text-3xl font-bold text-white">{stats.totalContracts}</p>
+            </div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-gold-500/10 flex items-center justify-center">
+                  <Lock size={20} className="text-gold-500" />
+                </div>
+                <span className="text-neutral-400 text-sm">Locked Records</span>
+              </div>
+              <p className="text-3xl font-bold text-gold-400">{stats.lockedRecords}</p>
+            </div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-gold-500/10 flex items-center justify-center">
+                  <Calendar size={20} className="text-gold-600" />
+                </div>
+                <span className="text-neutral-400 text-sm">Monthly Revenue</span>
+              </div>
+              <p className="text-3xl font-bold text-white">{formatCurrency(stats.monthlyRevenue)}</p>
+            </div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-gold-500/10 flex items-center justify-center">
+                  <TrendingUp size={20} className="text-gold-700" />
+                </div>
+                <span className="text-neutral-400 text-sm">Annual Revenue</span>
+              </div>
+              <p className="text-3xl font-bold text-gold-400">{formatCurrency(stats.annualRevenue)}</p>
             </div>
           </div>
 
@@ -661,100 +764,184 @@ export default function AdminDashboard() {
 
       {/* ===== Producers Tab ===== */}
       {activeTab === 'producers' && (
-        <div className="space-y-3">
-          {producers.length === 0 ? (
+        <div className="space-y-4">
+          {/* Search and Filter Controls */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                value={producerSearch}
+                onChange={(e) => setProducerSearch(e.target.value)}
+                className="w-full bg-neutral-900 border border-neutral-800 rounded-lg pl-10 pr-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-gold-600 transition-colors"
+              />
+            </div>
+            <div className="relative">
+              <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+              <select
+                value={verificationFilter}
+                onChange={(e) => setVerificationFilter(e.target.value as VerificationFilter)}
+                className="appearance-none bg-neutral-900 border border-neutral-800 rounded-lg pl-10 pr-10 py-2.5 text-sm text-neutral-200 focus:outline-none focus:border-gold-600 transition-colors"
+              >
+                <option value="all">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="verified">Verified</option>
+                <option value="rejected">Rejected</option>
+                <option value="suspended">Suspended</option>
+              </select>
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Producers List */}
+          {filteredProducers.length === 0 ? (
             <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-8 text-center">
               <Users size={48} className="text-neutral-600 mx-auto mb-3" />
-              <p className="text-neutral-400">No producers found.</p>
+              <p className="text-neutral-400">No producers found matching your filters.</p>
             </div>
           ) : (
-            producers.map((producer) => {
-              const membership = getMembershipBadge(producer.membership_status);
-              return (
-                <div key={producer.id} className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
-                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                    <div className="flex items-start gap-4 min-w-0">
-                      <div className="w-12 h-12 rounded-xl bg-gold-500/10 flex items-center justify-center flex-shrink-0">
-                        <Users size={24} className="text-gold-400" />
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="text-lg font-semibold text-white truncate">{producer.full_legal_name}</h3>
-                        <p className="text-neutral-400 text-sm">{producer.stage_name} -- {producer.email}</p>
-                        <div className="flex flex-wrap items-center gap-2 mt-2">
-                          {verificationBadge(producer.association_verification_status)}
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${membership.color}`}>{membership.label}</span>
-                          <span className="text-xs text-neutral-500">Joined: {formatDate(producer.created_at)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    {producer.association_verification_status === 'pending' && (
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => approveVerification(producer.id)}
-                          disabled={actionLoading === producer.id}
-                          className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-neutral-950 font-semibold rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
-                        >
-                          <CheckCircle2 size={14} /> Approve
-                        </button>
-                        <button
-                          onClick={() => rejectVerification(producer.id)}
-                          disabled={actionLoading === producer.id}
-                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
-                        >
-                          <XCircle size={14} /> Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-neutral-800">
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Name</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Stage Name</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Email</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">IPI Number</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Verification</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Membership</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Registered</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-800">
+                    {filteredProducers.map((producer) => {
+                      const membership = getMembershipBadge(producer.membership_status);
+                      return (
+                        <tr key={producer.id} className="hover:bg-neutral-800/50 transition-colors">
+                          <td className="px-5 py-4 text-sm text-white font-medium">{producer.full_legal_name}</td>
+                          <td className="px-5 py-4 text-sm text-neutral-300">{producer.stage_name}</td>
+                          <td className="px-5 py-4 text-sm text-neutral-400">{producer.email}</td>
+                          <td className="px-5 py-4 text-sm text-neutral-400 font-mono">{producer.ipi_number || '---'}</td>
+                          <td className="px-5 py-4">{verificationBadge(producer.association_verification_status)}</td>
+                          <td className="px-5 py-4">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${membership.color}`}>{membership.label}</span>
+                          </td>
+                          <td className="px-5 py-4 text-sm text-neutral-500">{formatDate(producer.created_at)}</td>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2">
+                              {producer.association_verification_status === 'pending' && (
+                                <>
+                                  <button
+                                    onClick={() => approveVerification(producer.id)}
+                                    disabled={actionLoading === producer.id}
+                                    className="px-3 py-1.5 bg-gold-600 hover:bg-gold-700 text-neutral-950 text-xs font-semibold rounded-md transition-colors disabled:opacity-50"
+                                  >
+                                    Verify
+                                  </button>
+                                  <button
+                                    onClick={() => rejectVerification(producer.id)}
+                                    disabled={actionLoading === producer.id}
+                                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-md transition-colors disabled:opacity-50"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
+                              {producer.membership_status !== 'active' && (
+                                <button
+                                  onClick={() => confirmMembershipPayment(producer.id)}
+                                  disabled={actionLoading === producer.id}
+                                  className="px-3 py-1.5 bg-gold-600 hover:bg-gold-700 text-neutral-950 text-xs font-semibold rounded-md transition-colors disabled:opacity-50"
+                                >
+                                  Confirm Payment
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </div>
       )}
 
       {/* ===== Payments Tab ===== */}
       {activeTab === 'payments' && (
-        <div className="space-y-3">
-          {payments.length === 0 ? (
+        <div className="space-y-4">
+          {/* Filter Controls */}
+          <div className="flex items-center gap-3">
+            <Filter size={16} className="text-neutral-500" />
+            <select
+              value={paymentFilter}
+              onChange={(e) => setPaymentFilter(e.target.value as PaymentFilter)}
+              className="appearance-none bg-neutral-900 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-neutral-200 focus:outline-none focus:border-gold-600 transition-colors pr-10"
+            >
+              <option value="all">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+            </select>
+            <ChevronDown size={14} className="text-neutral-400 pointer-events-none -ml-7" />
+          </div>
+
+          {/* Payments List */}
+          {filteredPayments.length === 0 ? (
             <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-8 text-center">
               <CreditCard size={48} className="text-neutral-600 mx-auto mb-3" />
               <p className="text-neutral-400">No payments found.</p>
             </div>
           ) : (
-            payments.map((payment) => (
-              <div key={payment.id} className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                  <div className="flex items-start gap-4 min-w-0">
-                    <div className="w-12 h-12 rounded-xl bg-gold-500/10 flex items-center justify-center flex-shrink-0">
-                      <CreditCard size={24} className="text-gold-400" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-lg font-semibold text-white truncate">
-                        {formatCurrency(payment.amount)} -- {payment.payment_type.replace(/_/g, ' ')}
-                      </h3>
-                      <p className="text-neutral-400 text-sm">{payment.description || payment.payment_method || 'No description'}</p>
-                      <div className="flex flex-wrap items-center gap-2 mt-2">
-                        {paymentStatusBadge(payment.status)}
-                        <span className="text-xs text-neutral-500">{formatDate(payment.created_at)}</span>
-                        {payment.completed_at && (
-                          <span className="text-xs text-neutral-500">Completed: {formatDate(payment.completed_at)}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {payment.status === 'pending' && (
-                    <button
-                      onClick={() => confirmPayment(payment.id)}
-                      disabled={actionLoading === payment.id}
-                      className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-neutral-950 font-semibold rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50 flex-shrink-0"
-                    >
-                      <CheckCircle2 size={14} /> Confirm Payment
-                    </button>
-                  )}
-                </div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-neutral-800">
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Producer</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Amount</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Type</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Status</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Date</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Method</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-800">
+                    {filteredPayments.map((payment) => {
+                      const producer = producers.find((p) => p.id === payment.producer_id);
+                      const producerName = producer ? producer.full_legal_name : payment.producer_id || 'Unknown';
+                      return (
+                        <tr key={payment.id} className="hover:bg-neutral-800/50 transition-colors">
+                          <td className="px-5 py-4 text-sm text-white font-medium">{producerName}</td>
+                          <td className="px-5 py-4 text-sm text-gold-400 font-semibold">{formatCurrency(payment.amount)}</td>
+                          <td className="px-5 py-4 text-sm text-neutral-300">{payment.payment_type.replace(/_/g, ' ')}</td>
+                          <td className="px-5 py-4">{paymentStatusBadge(payment.status)}</td>
+                          <td className="px-5 py-4 text-sm text-neutral-500">{formatDate(payment.created_at)}</td>
+                          <td className="px-5 py-4 text-sm text-neutral-400">{paymentMethodLabel(payment.payment_method)}</td>
+                          <td className="px-5 py-4">
+                            {payment.status === 'pending' && (
+                              <button
+                                onClick={() => confirmPayment(payment.id, payment.producer_id)}
+                                disabled={actionLoading === payment.id}
+                                className="px-3 py-1.5 bg-gold-600 hover:bg-gold-700 text-neutral-950 text-xs font-semibold rounded-md transition-colors disabled:opacity-50"
+                              >
+                                Confirm Payment
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            ))
+            </div>
           )}
         </div>
       )}
@@ -762,20 +949,21 @@ export default function AdminDashboard() {
       {/* ===== Content Tab ===== */}
       {activeTab === 'content' && (
         <div className="space-y-6">
-          {/* Pending Catalog Entries */}
+          {/* Pending Songs */}
           <div>
             <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
               <Music size={18} className="text-gold-400" />
-              Catalog Entries
+              Pending Songs
+              <span className="text-sm font-normal text-neutral-500">({pendingCatalogEntries.length})</span>
             </h3>
-            <div className="space-y-3">
-              {catalogEntries.length === 0 ? (
-                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 text-center">
-                  <Music size={40} className="text-neutral-600 mx-auto mb-2" />
-                  <p className="text-neutral-400 text-sm">No catalog entries found.</p>
-                </div>
-              ) : (
-                catalogEntries.map((entry) => (
+            {pendingCatalogEntries.length === 0 ? (
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 text-center">
+                <Music size={40} className="text-neutral-600 mx-auto mb-2" />
+                <p className="text-neutral-400 text-sm">No pending songs to review.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pendingCatalogEntries.map((entry) => (
                   <div key={entry.id} className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
                     <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                       <div className="flex items-start gap-4 min-w-0">
@@ -791,45 +979,44 @@ export default function AdminDashboard() {
                           </div>
                         </div>
                       </div>
-                      {entry.approval_status === 'pending' && (
-                        <div className="flex gap-2 flex-shrink-0">
-                          <button
-                            onClick={() => approveCatalogEntry(entry.id)}
-                            disabled={actionLoading === entry.id}
-                            className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-neutral-950 font-semibold rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
-                          >
-                            <CheckCircle2 size={14} /> Approve
-                          </button>
-                          <button
-                            onClick={() => rejectCatalogEntry(entry.id)}
-                            disabled={actionLoading === entry.id}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
-                          >
-                            <XCircle size={14} /> Reject
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => approveCatalogEntry(entry.id)}
+                          disabled={actionLoading === entry.id}
+                          className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-neutral-950 font-semibold rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <CheckCircle2 size={14} /> Approve
+                        </button>
+                        <button
+                          onClick={() => rejectCatalogEntry(entry.id)}
+                          disabled={actionLoading === entry.id}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <XCircle size={14} /> Reject
+                        </button>
+                      </div>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Pending Contracts */}
           <div>
             <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
               <FileText size={18} className="text-gold-400" />
-              Contracts
+              Pending Contracts
+              <span className="text-sm font-normal text-neutral-500">({pendingContracts.length})</span>
             </h3>
-            <div className="space-y-3">
-              {contracts.length === 0 ? (
-                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 text-center">
-                  <FileText size={40} className="text-neutral-600 mx-auto mb-2" />
-                  <p className="text-neutral-400 text-sm">No contracts found.</p>
-                </div>
-              ) : (
-                contracts.map((contract) => (
+            {pendingContracts.length === 0 ? (
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 text-center">
+                <FileText size={40} className="text-neutral-600 mx-auto mb-2" />
+                <p className="text-neutral-400 text-sm">No pending contracts to review.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pendingContracts.map((contract) => (
                   <div key={contract.id} className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
                     <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                       <div className="flex items-start gap-4 min-w-0">
@@ -849,29 +1036,27 @@ export default function AdminDashboard() {
                           </div>
                         </div>
                       </div>
-                      {contract.approval_status === 'pending' && (
-                        <div className="flex gap-2 flex-shrink-0">
-                          <button
-                            onClick={() => approveContract(contract.id)}
-                            disabled={actionLoading === contract.id}
-                            className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-neutral-950 font-semibold rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
-                          >
-                            <CheckCircle2 size={14} /> Approve
-                          </button>
-                          <button
-                            onClick={() => rejectContract(contract.id)}
-                            disabled={actionLoading === contract.id}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
-                          >
-                            <XCircle size={14} /> Reject
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => approveContract(contract.id)}
+                          disabled={actionLoading === contract.id}
+                          className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-neutral-950 font-semibold rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <CheckCircle2 size={14} /> Approve
+                        </button>
+                        <button
+                          onClick={() => rejectContract(contract.id)}
+                          disabled={actionLoading === contract.id}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <XCircle size={14} /> Reject
+                        </button>
+                      </div>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -915,7 +1100,7 @@ export default function AdminDashboard() {
                     <button
                       onClick={() => resolveDispute(dispute.id)}
                       disabled={actionLoading === dispute.id}
-                      className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-neutral-950 font-semibold rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50 flex-shrink-0"
+                      className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-neutral-950 font-semibold rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 flex-shrink-0"
                     >
                       <CheckCircle2 size={14} /> Resolve
                     </button>
@@ -936,46 +1121,64 @@ export default function AdminDashboard() {
               <p className="text-neutral-400">No user roles found.</p>
             </div>
           ) : (
-            userRoles.map((assignment) => (
-              <div key={assignment.id} className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                  <div className="flex items-start gap-4 min-w-0">
-                    <div className="w-12 h-12 rounded-xl bg-gold-500/10 flex items-center justify-center flex-shrink-0">
-                      <Shield size={24} className="text-gold-400" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-lg font-semibold text-white truncate font-mono text-sm">
-                        {assignment.user_id}
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-2 mt-2">
-                        <span className="text-xs text-gold-400 bg-gold-500/10 px-2 py-0.5 rounded-full">
-                          {assignment.role}
-                        </span>
-                        <span className="text-xs text-neutral-500">Assigned: {formatDate(assignment.assigned_at)}</span>
-                        {assignment.assigned_by && (
-                          <span className="text-xs text-neutral-500">By: {assignment.assigned_by}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="relative flex-shrink-0">
-                    <select
-                      value={assignment.role}
-                      onChange={(e) => changeUserRole(assignment.id, e.target.value as UserRoleAssignment['role'])}
-                      disabled={actionLoading === assignment.id}
-                      className="appearance-none bg-neutral-800 border border-neutral-700 text-neutral-200 text-sm rounded-lg px-4 py-2 pr-8 focus:outline-none focus:border-gold-500 transition-colors disabled:opacity-50"
-                    >
-                      {ROLES.map((role) => (
-                        <option key={role} value={role}>
-                          {role}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
-                  </div>
-                </div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-neutral-800">
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">User ID</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Current Role</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Assigned</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Change Role</th>
+                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-800">
+                    {userRoles.map((assignment) => {
+                      const currentRole = roleUpdates[assignment.id] ?? assignment.role;
+                      const hasChanged = currentRole !== assignment.role;
+                      return (
+                        <tr key={assignment.id} className="hover:bg-neutral-800/50 transition-colors">
+                          <td className="px-5 py-4 text-sm text-neutral-300 font-mono">{assignment.user_id}</td>
+                          <td className="px-5 py-4">
+                            <span className="text-xs text-gold-400 bg-gold-500/10 px-2 py-0.5 rounded-full">
+                              {assignment.role}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-sm text-neutral-500">{formatDate(assignment.assigned_at)}</td>
+                          <td className="px-5 py-4">
+                            <div className="relative">
+                              <select
+                                value={currentRole}
+                                onChange={(e) => setRoleUpdates((prev) => ({ ...prev, [assignment.id]: e.target.value as UserRoleAssignment['role'] }))}
+                                disabled={actionLoading === assignment.id}
+                                className="appearance-none bg-neutral-800 border border-neutral-700 text-neutral-200 text-sm rounded-lg px-4 py-2 pr-8 focus:outline-none focus:border-gold-500 transition-colors disabled:opacity-50"
+                              >
+                                {ROLES.map((role) => (
+                                  <option key={role} value={role}>
+                                    {role}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <button
+                              onClick={() => handleUpdateRole(assignment.id)}
+                              disabled={!hasChanged || actionLoading === assignment.id}
+                              className="px-3 py-1.5 bg-gold-600 hover:bg-gold-700 text-neutral-950 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Update Role
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            ))
+            </div>
           )}
         </div>
       )}

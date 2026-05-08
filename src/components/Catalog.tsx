@@ -199,6 +199,15 @@ export default function Catalog() {
 
       if (error) throw error;
 
+      // Audit log
+      await supabase.from('audit_logs').insert({
+        actor_id: user.id,
+        action: 'create',
+        record_type: 'catalog_entry',
+        record_id: form.song_title,
+        new_data: { song_title: form.song_title, artist_names: form.artist_names, genre: form.genre },
+      });
+
       setMessage({ type: 'success', text: 'Catalog entry created successfully.' });
       setShowForm(false);
       setForm({

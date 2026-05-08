@@ -13,9 +13,10 @@ import {
   Shield,
   Scale,
   AlertTriangle,
+  Settings,
 } from 'lucide-react';
 
-type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment' | 'admin' | 'disputes';
+type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment' | 'admin' | 'disputes' | 'settings';
 
 interface LayoutProps {
   currentPage: Page;
@@ -34,6 +35,7 @@ const iconMap: Record<string, React.ReactNode> = {
   audit: <ChevronRight size={20} />,
   admin: <Shield size={20} />,
   payment: <AlertTriangle size={20} />,
+  settings: <Settings size={20} />,
 };
 
 const defaultNavItems: { id: Page; label: string }[] = [

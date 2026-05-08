@@ -18,6 +18,7 @@ import {
   Shield,
   ArrowRight,
   X,
+  Phone,
 } from 'lucide-react';
 
 interface PaymentProps {
@@ -26,32 +27,10 @@ interface PaymentProps {
 
 type PaymentMethodOption = 'airtel_money' | 'tnm_mpamba' | 'national_bank';
 
-interface PaymentMethodConfig {
-  id: PaymentMethodOption;
-  label: string;
-  description: string;
-  icon: typeof Smartphone;
-}
-
-const PAYMENT_METHODS: PaymentMethodConfig[] = [
-  {
-    id: 'airtel_money',
-    label: 'Airtel Money',
-    description: 'Pay via Airtel Money mobile wallet',
-    icon: Smartphone,
-  },
-  {
-    id: 'tnm_mpamba',
-    label: 'TNM Mpamba',
-    description: 'Pay via TNM Mpamba mobile wallet',
-    icon: Smartphone,
-  },
-  {
-    id: 'national_bank',
-    label: 'National Bank',
-    description: 'Pay via National Bank transfer',
-    icon: Building2,
-  },
+const PAYMENT_METHODS: { id: PaymentMethodOption; label: string; description: string; icon: typeof Smartphone; prefix: string }[] = [
+  { id: 'airtel_money', label: 'Airtel Money', description: 'Pay via Airtel Money mobile wallet', icon: Smartphone, prefix: '099' },
+  { id: 'tnm_mpamba', label: 'TNM Mpamba', description: 'Pay via TNM Mpamba mobile wallet', icon: Smartphone, prefix: '088' },
+  { id: 'national_bank', label: 'National Bank', description: 'Pay via National Bank transfer', icon: Building2, prefix: '' },
 ];
 
 const MEMBERSHIP_FEE = 15000;
@@ -59,33 +38,22 @@ const LATE_RENEWAL_FEE = 18750;
 
 function getStatusBadge(status: Payment['status']) {
   switch (status) {
-    case 'completed':
-      return { label: 'Completed', className: 'bg-green-500/10 text-green-400 border-green-500/20' };
-    case 'pending':
-      return { label: 'Pending', className: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' };
-    case 'failed':
-      return { label: 'Failed', className: 'bg-red-500/10 text-red-400 border-red-500/20' };
-    case 'processing':
-      return { label: 'Processing', className: 'bg-gold-500/10 text-gold-400 border-gold-500/20' };
-    case 'refunded':
-      return { label: 'Refunded', className: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20' };
-    default:
-      return { label: 'Unknown', className: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20' };
+    case 'completed': return { label: 'Completed', className: 'bg-green-500/10 text-green-400 border-green-500/20' };
+    case 'pending': return { label: 'Pending', className: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' };
+    case 'failed': return { label: 'Failed', className: 'bg-red-500/10 text-red-400 border-red-500/20' };
+    case 'processing': return { label: 'Processing', className: 'bg-gold-500/10 text-gold-400 border-gold-500/20' };
+    case 'refunded': return { label: 'Refunded', className: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20' };
+    default: return { label: 'Unknown', className: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20' };
   }
 }
 
 function getMembershipStatusBadge(status: string) {
   switch (status) {
-    case 'trial':
-      return { label: 'Free Trial', className: 'bg-gold-500/10 text-gold-400 border-gold-500/20' };
-    case 'grace':
-      return { label: 'Grace Period', className: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' };
-    case 'suspended':
-      return { label: 'Suspended', className: 'bg-red-500/10 text-red-400 border-red-500/20' };
-    case 'active':
-      return { label: 'Active', className: 'bg-green-500/10 text-green-400 border-green-500/20' };
-    default:
-      return { label: 'Unknown', className: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20' };
+    case 'trial': return { label: 'Free Trial', className: 'bg-gold-500/10 text-gold-400 border-gold-500/20' };
+    case 'grace': return { label: 'Grace Period', className: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' };
+    case 'suspended': return { label: 'Suspended', className: 'bg-red-500/10 text-red-400 border-red-500/20' };
+    case 'active': return { label: 'Active', className: 'bg-green-500/10 text-green-400 border-green-500/20' };
+    default: return { label: 'Unknown', className: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20' };
   }
 }
 
@@ -95,6 +63,7 @@ export default function Payment({ onComplete }: PaymentProps) {
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethodOption>('airtel_money');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [paymentHistory, setPaymentHistory] = useState<Payment[]>([]);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [expandedReceipt, setExpandedReceipt] = useState<string | null>(null);
@@ -103,29 +72,28 @@ export default function Payment({ onComplete }: PaymentProps) {
   const isLateRenewal = membershipStatus === 'suspended';
   const amountDue = isLateRenewal ? LATE_RENEWAL_FEE : MEMBERSHIP_FEE;
   const statusBadge = getMembershipStatusBadge(membershipStatus);
+  const needsPhone = selectedMethod !== 'national_bank';
+  const selectedConfig = PAYMENT_METHODS.find(m => m.id === selectedMethod)!;
 
   useEffect(() => {
     loadPaymentHistory();
   }, [user]);
 
-  async function loadPaymentHistory() {
-    if (!user) {
-      setLoading(false);
-      return;
+  useEffect(() => {
+    if (profile?.phone_number) {
+      setPhoneNumber(profile.phone_number);
     }
+  }, [profile]);
 
+  async function loadPaymentHistory() {
+    if (!user) { setLoading(false); return; }
     try {
-      const { data, error: fetchError } = await supabase
+      const { data } = await supabase
         .from('payments')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
-
-      if (fetchError) {
-        console.error('Error loading payment history:', fetchError);
-      } else {
-        setPaymentHistory((data ?? []) as Payment[]);
-      }
+      setPaymentHistory((data ?? []) as Payment[]);
     } catch (err) {
       console.error('Error loading payment history:', err);
     } finally {
@@ -134,17 +102,15 @@ export default function Payment({ onComplete }: PaymentProps) {
   }
 
   async function handlePayNow() {
-    if (!session) {
-      setError('You must be signed in to make a payment.');
-      return;
-    }
+    if (!session) { setError('You must be signed in to make a payment.'); return; }
+    if (needsPhone && !phoneNumber.trim()) { setError('Please enter your phone number for mobile money payment.'); return; }
+    if (needsPhone && phoneNumber.replace(/\D/g, '').length < 9) { setError('Please enter a valid phone number.'); return; }
 
     setPaying(true);
     setError(null);
 
     try {
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pay`;
-
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -153,7 +119,10 @@ export default function Payment({ onComplete }: PaymentProps) {
         },
         body: JSON.stringify({
           action: 'initiate',
-          payment_type: 'membership',
+          payment_type: isLateRenewal ? 'late_renewal' : 'membership',
+          amount: amountDue,
+          payment_method: selectedMethod,
+          phone_number: needsPhone ? phoneNumber : '',
           return_url: window.location.origin + '/dashboard',
         }),
       });
@@ -178,16 +147,9 @@ export default function Payment({ onComplete }: PaymentProps) {
   }
 
   function handlePayLater() {
-    if (onComplete) {
-      onComplete();
-    }
+    if (onComplete) onComplete();
   }
 
-  function toggleReceipt(paymentId: string) {
-    setExpandedReceipt(prev => (prev === paymentId ? null : paymentId));
-  }
-
-  // --- Loading State ---
   if (loading) {
     return (
       <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
@@ -203,32 +165,26 @@ export default function Payment({ onComplete }: PaymentProps) {
     <div className="min-h-screen bg-neutral-950 py-8 px-4">
       <div className="max-w-2xl mx-auto space-y-6">
 
-        {/* Header */}
         <div className="text-center">
           <h1 className="text-2xl font-bold text-white">Membership Payment</h1>
-          <p className="text-neutral-400 text-sm mt-1">PAEAM - Performing Arts and Entertainment Association of Malawi</p>
+          <p className="text-neutral-400 text-sm mt-1">PAEAM - Producers & Audio Engineering Association of Malawi</p>
         </div>
 
-        {/* Error Banner */}
         {error && (
           <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3">
             <XCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1">
               <p className="text-red-400 text-sm font-medium">Payment Error</p>
               <p className="text-red-400/80 text-sm">{error}</p>
             </div>
-            <button
-              onClick={() => setError(null)}
-              className="ml-auto text-red-400/60 hover:text-red-400"
-            >
+            <button onClick={() => setError(null)} className="text-red-400/60 hover:text-red-400">
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
 
-        {/* Payment Overview Card */}
+        {/* Payment Overview */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
-          {/* Status and Amount */}
           <div className="p-6 border-b border-neutral-800">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white">Payment Overview</h2>
@@ -236,18 +192,13 @@ export default function Payment({ onComplete }: PaymentProps) {
                 {statusBadge.label}
               </span>
             </div>
-
             <div className="bg-neutral-800 rounded-xl p-5">
               <p className="text-neutral-400 text-xs uppercase tracking-wider mb-1">
                 {isLateRenewal ? 'Late Renewal Fee' : 'Annual Membership Fee'}
               </p>
-              <p className="text-3xl font-bold text-gold-400">
-                {formatCurrency(amountDue)}
-              </p>
+              <p className="text-3xl font-bold text-gold-400">{formatCurrency(amountDue)}</p>
               {isLateRenewal && (
-                <p className="text-xs text-red-400/80 mt-2">
-                  Includes 25% late fee after grace period
-                </p>
+                <p className="text-xs text-red-400/80 mt-2">Includes 25% late fee after grace period</p>
               )}
             </div>
           </div>
@@ -264,52 +215,49 @@ export default function Payment({ onComplete }: PaymentProps) {
                     key={method.id}
                     onClick={() => setSelectedMethod(method.id)}
                     className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-colors text-left ${
-                      isSelected
-                        ? 'bg-gold-600/10 border-gold-600/40'
-                        : 'bg-neutral-800 border-neutral-700 hover:border-neutral-600'
+                      isSelected ? 'bg-gold-600/10 border-gold-600/40' : 'bg-neutral-800 border-neutral-700 hover:border-neutral-600'
                     }`}
                   >
-                    {/* Radio indicator */}
-                    <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                        isSelected
-                          ? 'border-gold-500'
-                          : 'border-neutral-600'
-                      }`}
-                    >
-                      {isSelected && (
-                        <div className="w-2.5 h-2.5 rounded-full bg-gold-500" />
-                      )}
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                      isSelected ? 'border-gold-500' : 'border-neutral-600'
+                    }`}>
+                      {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-gold-500" />}
                     </div>
-
-                    {/* Icon */}
-                    <div
-                      className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                        isSelected
-                          ? 'bg-gold-600/20 text-gold-400'
-                          : 'bg-neutral-700 text-neutral-400'
-                      }`}
-                    >
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                      isSelected ? 'bg-gold-600/20 text-gold-400' : 'bg-neutral-700 text-neutral-400'
+                    }`}>
                       <Icon className="w-5 h-5" />
                     </div>
-
-                    {/* Text */}
                     <div className="flex-1 min-w-0">
                       <p className={`text-sm font-medium ${isSelected ? 'text-gold-400' : 'text-neutral-300'}`}>
                         {method.label}
                       </p>
                       <p className="text-xs text-neutral-500">{method.description}</p>
                     </div>
-
-                    {/* Arrow */}
-                    {isSelected && (
-                      <ArrowRight className="w-4 h-4 text-gold-500 flex-shrink-0" />
-                    )}
+                    {isSelected && <ArrowRight className="w-4 h-4 text-gold-500 flex-shrink-0" />}
                   </button>
                 );
               })}
             </div>
           </div>
+
+          {/* Phone Number Input for Mobile Money */}
+          {needsPhone && (
+            <div className="p-6 border-b border-neutral-800">
+              <label className="block text-sm font-medium text-neutral-300 mb-2">
+                <Phone size={14} className="inline mr-1.5" />
+                {selectedConfig.label} Phone Number
+              </label>
+              <input
+                type="tel"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder={selectedConfig.prefix ? `${selectedConfig.prefix}XXXXXXX` : '099XXXXXXX'}
+                className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-gold-600 focus:ring-1 focus:ring-gold-600 transition-all"
+              />
+              <p className="text-xs text-neutral-500 mt-2">Enter the phone number linked to your {selectedConfig.label} account</p>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="p-6 space-y-3">
@@ -319,18 +267,11 @@ export default function Payment({ onComplete }: PaymentProps) {
               className="w-full py-3 bg-gold-600 hover:bg-gold-500 text-neutral-950 font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {paying ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Processing...
-                </>
+                <><Loader2 className="w-5 h-5 animate-spin" /> Processing...</>
               ) : (
-                <>
-                  <CreditCard className="w-5 h-5" />
-                  Pay Now
-                </>
+                <><CreditCard className="w-5 h-5" /> Pay Now</>
               )}
             </button>
-
             <button
               onClick={handlePayLater}
               className="w-full py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-300 font-medium rounded-xl transition-colors text-sm"
@@ -373,11 +314,7 @@ export default function Payment({ onComplete }: PaymentProps) {
                   <p className="text-xs text-neutral-500">{paymentHistory.length} transaction{paymentHistory.length !== 1 ? 's' : ''}</p>
                 </div>
               </div>
-              {historyExpanded ? (
-                <ChevronUp className="w-5 h-5 text-neutral-500" />
-              ) : (
-                <ChevronDown className="w-5 h-5 text-neutral-500" />
-              )}
+              {historyExpanded ? <ChevronUp className="w-5 h-5 text-neutral-500" /> : <ChevronDown className="w-5 h-5 text-neutral-500" />}
             </button>
 
             {historyExpanded && (
@@ -387,96 +324,60 @@ export default function Payment({ onComplete }: PaymentProps) {
                     const badge = getStatusBadge(payment.status);
                     const isCompleted = payment.status === 'completed';
                     const isReceiptOpen = expandedReceipt === payment.id;
-
                     return (
                       <div key={payment.id} className="p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3 min-w-0">
                             <div className="flex-shrink-0">
-                              {payment.status === 'completed' ? (
-                                <CheckCircle2 className="w-5 h-5 text-green-400" />
-                              ) : payment.status === 'failed' ? (
-                                <XCircle className="w-5 h-5 text-red-400" />
-                              ) : (
-                                <Clock className="w-5 h-5 text-gold-400" />
-                              )}
+                              {payment.status === 'completed' ? <CheckCircle2 className="w-5 h-5 text-green-400" />
+                                : payment.status === 'failed' ? <XCircle className="w-5 h-5 text-red-400" />
+                                : <Clock className="w-5 h-5 text-gold-400" />}
                             </div>
                             <div className="min-w-0">
                               <p className="text-sm font-medium text-white truncate">
                                 {payment.description || payment.payment_type.replace(/_/g, ' ')}
                               </p>
-                              <p className="text-xs text-neutral-500">
-                                {formatDate(payment.created_at)}
-                              </p>
+                              <p className="text-xs text-neutral-500">{formatDate(payment.created_at)}</p>
                             </div>
                           </div>
-
                           <div className="flex items-center gap-3 flex-shrink-0">
-                            <p className="text-sm font-semibold text-gold-400">
-                              {formatCurrency(payment.amount)}
-                            </p>
+                            <p className="text-sm font-semibold text-gold-400">{formatCurrency(payment.amount)}</p>
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${badge.className}`}>
                               {badge.label}
                             </span>
                           </div>
                         </div>
-
-                        {/* Receipt toggle for completed payments */}
                         {isCompleted && (
                           <div className="mt-3">
                             <button
-                              onClick={() => toggleReceipt(payment.id)}
+                              onClick={() => setExpandedReceipt(prev => prev === payment.id ? null : payment.id)}
                               className="flex items-center gap-1.5 text-xs text-gold-400 hover:text-gold-300 transition-colors"
                             >
                               <FileText className="w-3.5 h-3.5" />
                               {isReceiptOpen ? 'Hide Receipt' : 'View Receipt'}
                             </button>
-
                             {isReceiptOpen && (
                               <div className="mt-3 bg-neutral-800 rounded-xl p-4 space-y-2">
                                 <div className="flex justify-between text-xs">
                                   <span className="text-neutral-500">Transaction ID</span>
-                                  <span className="text-neutral-300 font-mono">
-                                    {payment.paychangu_tx_id || '--'}
-                                  </span>
+                                  <span className="text-neutral-300 font-mono">{payment.paychangu_tx_id || '--'}</span>
                                 </div>
                                 <div className="flex justify-between text-xs">
                                   <span className="text-neutral-500">Reference</span>
-                                  <span className="text-neutral-300 font-mono">
-                                    {payment.paychangu_reference || '--'}
-                                  </span>
+                                  <span className="text-neutral-300 font-mono">{payment.paychangu_reference || '--'}</span>
                                 </div>
                                 <div className="flex justify-between text-xs">
                                   <span className="text-neutral-500">Amount</span>
-                                  <span className="text-gold-400 font-medium">
-                                    {formatCurrency(payment.amount)}
-                                  </span>
+                                  <span className="text-gold-400 font-medium">{formatCurrency(payment.amount)}</span>
                                 </div>
                                 <div className="flex justify-between text-xs">
                                   <span className="text-neutral-500">Date</span>
-                                  <span className="text-neutral-300">
-                                    {formatDate(payment.completed_at || payment.created_at)}
-                                  </span>
+                                  <span className="text-neutral-300">{formatDate(payment.completed_at || payment.created_at)}</span>
                                 </div>
                                 <div className="flex justify-between text-xs">
                                   <span className="text-neutral-500">Method</span>
-                                  <span className="text-neutral-300 capitalize">
-                                    {payment.payment_method.replace(/_/g, ' ') || '--'}
-                                  </span>
+                                  <span className="text-neutral-300 capitalize">{payment.payment_method.replace(/_/g, ' ') || '--'}</span>
                                 </div>
-                                {payment.receipt_url && (
-                                  <div className="pt-2 border-t border-neutral-700">
-                                    <a
-                                      href={payment.receipt_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1.5 text-xs text-gold-400 hover:text-gold-300 transition-colors"
-                                    >
-                                      <FileText className="w-3.5 h-3.5" />
-                                      Download Receipt
-                                    </a>
-                                  </div>
-                                )}
                               </div>
                             )}
                           </div>

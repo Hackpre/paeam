@@ -8,6 +8,21 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 
+  html.light body {
+    @apply bg-neutral-50 text-neutral-900;
+  }
+
+  html.light .bg-neutral-950 { @apply bg-neutral-50; }
+  html.light .bg-neutral-900 { @apply bg-neutral-100; }
+  html.light .bg-neutral-800 { @apply bg-neutral-200; }
+  html.light .border-neutral-800 { @apply border-neutral-200; }
+  html.light .border-neutral-700 { @apply border-neutral-300; }
+  html.light .text-neutral-100 { @apply text-neutral-900; }
+  html.light .text-neutral-300 { @apply text-neutral-700; }
+  html.light .text-neutral-400 { @apply text-neutral-600; }
+  html.light .text-neutral-500 { color: #737373; }
+  html.light .text-white { @apply text-neutral-900; }
+
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -29,6 +44,10 @@
     filter: invert(1);
   }
 
+  html.light input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: none;
+  }
+
   select {
     appearance: none;
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
@@ -36,5 +55,14 @@
     background-repeat: no-repeat;
     background-size: 1.5em 1.5em;
     padding-right: 2.5rem;
+  }
+
+  @keyframes slide-in-from-right {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  .animate-in.slide-in-from-right {
+    animation: slide-in-from-right 0.3s ease-out;
   }
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './lib/auth';
+import { ToastProvider } from './lib/toast';
 import Auth from './components/Auth';
 import Landing from './components/Landing';
 import Layout from './components/Layout';
@@ -12,8 +13,9 @@ import AuditTrail from './components/AuditTrail';
 import Payment from './components/Payment';
 import AdminDashboard from './components/AdminDashboard';
 import Disputes from './components/Disputes';
+import Settings from './components/Settings';
 
-type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment' | 'admin' | 'disputes';
+type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment' | 'admin' | 'disputes' | 'settings';
 type AppView = 'landing' | 'auth' | 'app';
 
 function AppContent() {
@@ -68,6 +70,7 @@ function AppContent() {
       case 'payment': return <Payment />;
       case 'admin': return <AdminDashboard />;
       case 'disputes': return <Disputes />;
+      case 'settings': return <Settings />;
       default: return <Dashboard />;
     }
   };
@@ -80,6 +83,7 @@ function AppContent() {
     { id: 'locks' as Page, label: 'Lock Approvals' },
     { id: 'disputes' as Page, label: 'Disputes' },
     { id: 'audit' as Page, label: 'Audit Trail' },
+    { id: 'settings' as Page, label: 'Settings' },
     ...(isAdmin ? [{ id: 'admin' as Page, label: 'Admin Dashboard' }] : []),
   ];
 
@@ -93,7 +97,9 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </AuthProvider>
   );
 }

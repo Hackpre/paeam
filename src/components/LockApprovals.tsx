@@ -91,6 +91,24 @@ export default function LockApprovals() {
           .from(tableName)
           .update({ is_locked: true })
           .eq('id', approval.record_id);
+
+        // Audit log for lock completion
+        await supabase.from('audit_logs').insert({
+          actor_id: user?.id || '',
+          action: 'lock_completed',
+          record_type: approval.record_type,
+          record_id: approval.record_id,
+          new_data: { fully_locked: true, locked_at: new Date().toISOString() },
+        });
+      } else {
+        // Audit log for individual approval
+        await supabase.from('audit_logs').insert({
+          actor_id: user?.id || '',
+          action: 'lock_approved',
+          record_type: approval.record_type,
+          record_id: approval.record_id,
+          new_data: { role, approved: true },
+        });
       }
 
       setMessage({
