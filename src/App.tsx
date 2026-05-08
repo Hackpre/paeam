@@ -19,9 +19,11 @@ type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit
 type AppView = 'landing' | 'auth' | 'app';
 
 function AppContent() {
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, isAdmin, profile } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [view, setView] = useState<AppView>('landing');
+
+  const needsPayment = profile && profile.membership_status !== 'active';
 
   useEffect(() => {
     if (user) {
@@ -81,6 +83,7 @@ function AppContent() {
     { id: 'catalog' as Page, label: 'Catalog' },
     { id: 'contracts' as Page, label: 'Contracts' },
     { id: 'locks' as Page, label: 'Lock Approvals' },
+    { id: 'payment' as Page, label: 'Pay Membership', ...(needsPayment ? { badge: 'Due' } : {}) },
     { id: 'disputes' as Page, label: 'Disputes' },
     { id: 'audit' as Page, label: 'Audit Trail' },
     { id: 'settings' as Page, label: 'Settings' },

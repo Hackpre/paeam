@@ -1,9 +1,9 @@
 export type UserRole = 'super_admin' | 'paeam_admin' | 'moderator' | 'producer' | 'artist' | 'viewer' | 'auditor';
-export type MembershipStatus = 'trial' | 'active' | 'grace' | 'suspended';
+export type MembershipStatus = 'trial' | 'active' | 'grace' | 'suspended' | 'bank_transfer_pending';
 export type VerificationStatus = 'pending' | 'verified' | 'rejected' | 'suspended';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type PaymentType = 'membership' | 'late_renewal' | 'contract_registration' | 'royalty_distribution';
-export type PaymentStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'refunded';
+export type PaymentStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'refunded' | 'bank_transfer_pending';
 export type PaymentMethod = '' | 'airtel_money' | 'tnm_mpamba' | 'national_bank' | 'card';
 export type ContractType = 'exclusive' | 'non-exclusive' | 'work-for-hire' | 'licensing' | 'distribution';
 export type DisputeType = 'ownership' | 'royalty' | 'copyright' | 'contract_breach' | 'other';
@@ -178,6 +178,10 @@ export interface Payment {
   payment_method: PaymentMethod;
   receipt_url: string;
   description: string;
+  proof_of_payment_url: string;
+  admin_notes: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;

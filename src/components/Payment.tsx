@@ -1,37 +1,28 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import PaymentModal from './PaymentModal';
 import type { Payment } from '../lib/types';
 import { formatCurrency, formatDate } from '../lib/utils';
 import {
   CreditCard,
-  Smartphone,
   Building2,
   Clock,
   CheckCircle2,
   XCircle,
-  Loader2,
   ChevronDown,
   ChevronUp,
   FileText,
   Info,
   Shield,
-  ArrowRight,
-  X,
-  Phone,
 } from 'lucide-react';
 
-interface PaymentProps {
-  onComplete?: () => void;
-}
-
-type PaymentMethodOption = 'airtel_money' | 'tnm_mpamba' | 'national_bank';
-
-const PAYMENT_METHODS: { id: PaymentMethodOption; label: string; description: string; icon: typeof Smartphone; prefix: string }[] = [
-  { id: 'airtel_money', label: 'Airtel Money', description: 'Pay via Airtel Money mobile wallet', icon: Smartphone, prefix: '099' },
-  { id: 'tnm_mpamba', label: 'TNM Mpamba', description: 'Pay via TNM Mpamba mobile wallet', icon: Smartphone, prefix: '088' },
-  { id: 'national_bank', label: 'National Bank', description: 'Pay via National Bank transfer', icon: Building2, prefix: '' },
-];
+const BANK_DETAILS = {
+  accountName: 'Producers & Audio Engineering Association of Malawi',
+  accountNumber: '1014312125',
+  bank: 'National Bank of Malawi',
+  branch: 'Henderson Street Branch, Blantyre',
+};
 
 const MEMBERSHIP_FEE = 15000;
 const LATE_RENEWAL_FEE = 18750;
@@ -43,6 +34,7 @@ function getStatusBadge(status: Payment['status']) {
     case 'failed': return { label: 'Failed', className: 'bg-red-500/10 text-red-400 border-red-500/20' };
     case 'processing': return { label: 'Processing', className: 'bg-gold-500/10 text-gold-400 border-gold-500/20' };
     case 'refunded': return { label: 'Refunded', className: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20' };
+    case 'bank_transfer_pending': return { label: 'Pending Verification', className: 'bg-blue-500/10 text-blue-400 border-blue-500/20' };
     default: return { label: 'Unknown', className: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20' };
   }
 }
@@ -53,37 +45,28 @@ function getMembershipStatusBadge(status: string) {
     case 'grace': return { label: 'Grace Period', className: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' };
     case 'suspended': return { label: 'Suspended', className: 'bg-red-500/10 text-red-400 border-red-500/20' };
     case 'active': return { label: 'Active', className: 'bg-green-500/10 text-green-400 border-green-500/20' };
+    case 'bank_transfer_pending': return { label: 'Pending Verification', className: 'bg-blue-500/10 text-blue-400 border-blue-500/20' };
     default: return { label: 'Unknown', className: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20' };
   }
 }
 
-export default function Payment({ onComplete }: PaymentProps) {
-  const { user, session, profile } = useAuth();
+export default function Payment() {
+  const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethodOption>('airtel_money');
-  const [phoneNumber, setPhoneNumber] = useState('');
   const [paymentHistory, setPaymentHistory] = useState<Payment[]>([]);
-  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(true);
   const [expandedReceipt, setExpandedReceipt] = useState<string | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   const membershipStatus = profile?.membership_status ?? 'trial';
   const isLateRenewal = membershipStatus === 'suspended';
   const amountDue = isLateRenewal ? LATE_RENEWAL_FEE : MEMBERSHIP_FEE;
   const statusBadge = getMembershipStatusBadge(membershipStatus);
-  const needsPhone = selectedMethod !== 'national_bank';
-  const selectedConfig = PAYMENT_METHODS.find(m => m.id === selectedMethod)!;
+  const needsPayment = membershipStatus !== 'active';
 
   useEffect(() => {
     loadPaymentHistory();
   }, [user]);
-
-  useEffect(() => {
-    if (profile?.phone_number) {
-      setPhoneNumber(profile.phone_number);
-    }
-  }, [profile]);
 
   async function loadPaymentHistory() {
     if (!user) { setLoading(false); return; }
@@ -101,188 +84,107 @@ export default function Payment({ onComplete }: PaymentProps) {
     }
   }
 
-  async function handlePayNow() {
-    if (!session) { setError('You must be signed in to make a payment.'); return; }
-    if (needsPhone && !phoneNumber.trim()) { setError('Please enter your phone number for mobile money payment.'); return; }
-    if (needsPhone && phoneNumber.replace(/\D/g, '').length < 9) { setError('Please enter a valid phone number.'); return; }
-
-    setPaying(true);
-    setError(null);
-
-    try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pay`;
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          action: 'initiate',
-          payment_type: isLateRenewal ? 'late_renewal' : 'membership',
-          amount: amountDue,
-          payment_method: selectedMethod,
-          phone_number: needsPhone ? phoneNumber : '',
-          return_url: window.location.origin + '/dashboard',
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || data.message || 'Payment initiation failed.');
-      }
-
-      if (data.payment_url) {
-        window.location.href = data.payment_url;
-      } else {
-        throw new Error('No payment URL returned. Please try again.');
-      }
-    } catch (err: any) {
-      console.error('Payment error:', err);
-      setError(err.message || 'Network error. Please check your connection and try again.');
-    } finally {
-      setPaying(false);
-    }
-  }
-
-  function handlePayLater() {
-    if (onComplete) onComplete();
-  }
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-gold-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-neutral-400 text-sm">Loading payment details...</p>
-        </div>
+      <div className="flex items-center justify-center h-64">
+        <div className="w-10 h-10 border-4 border-gold-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 py-8 px-4">
-      <div className="max-w-2xl mx-auto space-y-6">
+    <div className="space-y-6">
+      <PaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        amount={amountDue}
+        paymentType={isLateRenewal ? 'late_renewal' : 'membership'}
+      />
 
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-white">Membership Payment</h1>
-          <p className="text-neutral-400 text-sm mt-1">PAEAM - Producers & Audio Engineering Association of Malawi</p>
-        </div>
+      {/* Header */}
+      <div className="text-center">
+        <h1 className="text-2xl font-bold text-white">Membership Payment</h1>
+        <p className="text-neutral-400 text-sm mt-1">PAEAM - Producers & Audio Engineering Association of Malawi</p>
+      </div>
 
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3">
-            <XCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-red-400 text-sm font-medium">Payment Error</p>
-              <p className="text-red-400/80 text-sm">{error}</p>
-            </div>
-            <button onClick={() => setError(null)} className="text-red-400/60 hover:text-red-400">
-              <X className="w-4 h-4" />
+      {/* Payment Overview */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
+        <div className="p-6 border-b border-neutral-800">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white">Payment Overview</h2>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${statusBadge.className}`}>
+              {statusBadge.label}
+            </span>
+          </div>
+          <div className="bg-neutral-800 rounded-xl p-5">
+            <p className="text-neutral-400 text-xs uppercase tracking-wider mb-1">
+              {isLateRenewal ? 'Late Renewal Fee' : 'Annual Membership Fee'}
+            </p>
+            <p className="text-3xl font-bold text-gold-400">{formatCurrency(amountDue)}</p>
+            {isLateRenewal && (
+              <p className="text-xs text-red-400/80 mt-2">Includes 25% late fee after grace period</p>
+            )}
+          </div>
+
+          {needsPayment && (
+            <button
+              onClick={() => setShowPaymentModal(true)}
+              className="mt-4 w-full py-3 bg-gold-600 hover:bg-gold-500 text-neutral-950 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+            >
+              <CreditCard className="w-5 h-5" /> Pay Now
             </button>
-          </div>
-        )}
-
-        {/* Payment Overview */}
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="p-6 border-b border-neutral-800">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-white">Payment Overview</h2>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium border ${statusBadge.className}`}>
-                {statusBadge.label}
-              </span>
-            </div>
-            <div className="bg-neutral-800 rounded-xl p-5">
-              <p className="text-neutral-400 text-xs uppercase tracking-wider mb-1">
-                {isLateRenewal ? 'Late Renewal Fee' : 'Annual Membership Fee'}
-              </p>
-              <p className="text-3xl font-bold text-gold-400">{formatCurrency(amountDue)}</p>
-              {isLateRenewal && (
-                <p className="text-xs text-red-400/80 mt-2">Includes 25% late fee after grace period</p>
-              )}
-            </div>
-          </div>
-
-          {/* Payment Method Selection */}
-          <div className="p-6 border-b border-neutral-800">
-            <h3 className="text-sm font-medium text-neutral-300 mb-3">Select Payment Method</h3>
-            <div className="space-y-3">
-              {PAYMENT_METHODS.map((method) => {
-                const isSelected = selectedMethod === method.id;
-                const Icon = method.icon;
-                return (
-                  <button
-                    key={method.id}
-                    onClick={() => setSelectedMethod(method.id)}
-                    className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-colors text-left ${
-                      isSelected ? 'bg-gold-600/10 border-gold-600/40' : 'bg-neutral-800 border-neutral-700 hover:border-neutral-600'
-                    }`}
-                  >
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                      isSelected ? 'border-gold-500' : 'border-neutral-600'
-                    }`}>
-                      {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-gold-500" />}
-                    </div>
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                      isSelected ? 'bg-gold-600/20 text-gold-400' : 'bg-neutral-700 text-neutral-400'
-                    }`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium ${isSelected ? 'text-gold-400' : 'text-neutral-300'}`}>
-                        {method.label}
-                      </p>
-                      <p className="text-xs text-neutral-500">{method.description}</p>
-                    </div>
-                    {isSelected && <ArrowRight className="w-4 h-4 text-gold-500 flex-shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Phone Number Input for Mobile Money */}
-          {needsPhone && (
-            <div className="p-6 border-b border-neutral-800">
-              <label className="block text-sm font-medium text-neutral-300 mb-2">
-                <Phone size={14} className="inline mr-1.5" />
-                {selectedConfig.label} Phone Number
-              </label>
-              <input
-                type="tel"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder={selectedConfig.prefix ? `${selectedConfig.prefix}XXXXXXX` : '099XXXXXXX'}
-                className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-gold-600 focus:ring-1 focus:ring-gold-600 transition-all"
-              />
-              <p className="text-xs text-neutral-500 mt-2">Enter the phone number linked to your {selectedConfig.label} account</p>
-            </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="p-6 space-y-3">
-            <button
-              onClick={handlePayNow}
-              disabled={paying}
-              className="w-full py-3 bg-gold-600 hover:bg-gold-500 text-neutral-950 font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {paying ? (
-                <><Loader2 className="w-5 h-5 animate-spin" /> Processing...</>
-              ) : (
-                <><CreditCard className="w-5 h-5" /> Pay Now</>
-              )}
-            </button>
-            <button
-              onClick={handlePayLater}
-              className="w-full py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-300 font-medium rounded-xl transition-colors text-sm"
-            >
-              Pay Later
-            </button>
+          {membershipStatus === 'bank_transfer_pending' && (
+            <div className="mt-4 bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-start gap-3">
+              <Clock className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-blue-400 font-medium text-sm">Bank Transfer Under Review</p>
+                <p className="text-neutral-400 text-xs mt-1">Your proof of payment has been submitted and is being reviewed by an admin. You will receive an email confirmation once verified.</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Bank Transfer Details (always visible for reference) */}
+        <div className="p-6 border-b border-neutral-800">
+          <h3 className="text-sm font-medium text-neutral-300 mb-3 flex items-center gap-2">
+            <Building2 size={16} className="text-gold-400" />
+            National Bank Transfer Details
+          </h3>
+          <div className="bg-neutral-800 border border-neutral-700 rounded-xl p-5">
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs text-neutral-500 uppercase tracking-wider">Account Name</p>
+                <p className="text-sm text-white font-medium">{BANK_DETAILS.accountName}</p>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500 uppercase tracking-wider">Account Number</p>
+                <p className="text-sm text-white font-mono font-bold text-lg">{BANK_DETAILS.accountNumber}</p>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500 uppercase tracking-wider">Bank</p>
+                <p className="text-sm text-white">{BANK_DETAILS.bank}</p>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500 uppercase tracking-wider">Branch</p>
+                <p className="text-sm text-white">{BANK_DETAILS.branch}</p>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500 uppercase tracking-wider">Reference</p>
+                <p className="text-sm text-gold-400 font-mono">{user?.email || 'your.email@example.com'}</p>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-neutral-700">
+              <p className="text-xs text-neutral-400">
+                After transfer, your account will be activated within 24 hours. You will receive email confirmation once payment is verified.
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Membership Info */}
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
+        <div className="p-6">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-lg bg-gold-600/10 flex items-center justify-center flex-shrink-0">
               <Info className="w-5 h-5 text-gold-400" />
@@ -294,103 +196,116 @@ export default function Payment({ onComplete }: PaymentProps) {
               </p>
               <div className="mt-3 flex items-center gap-2 text-xs text-neutral-500">
                 <Shield className="w-4 h-4" />
-                <span>Payments are processed securely via PayChangu</span>
+                <span>Mobile money payments processed securely via PayChangu</span>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Payment History */}
-        {paymentHistory.length > 0 && (
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
-            <button
-              onClick={() => setHistoryExpanded(!historyExpanded)}
-              className="w-full p-6 flex items-center justify-between hover:bg-neutral-800/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Clock className="w-5 h-5 text-gold-400" />
-                <div className="text-left">
-                  <h3 className="text-sm font-semibold text-white">Payment History</h3>
-                  <p className="text-xs text-neutral-500">{paymentHistory.length} transaction{paymentHistory.length !== 1 ? 's' : ''}</p>
-                </div>
+      {/* Payment History */}
+      {paymentHistory.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
+          <button
+            onClick={() => setHistoryExpanded(!historyExpanded)}
+            className="w-full p-6 flex items-center justify-between hover:bg-neutral-800/50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Clock className="w-5 h-5 text-gold-400" />
+              <div className="text-left">
+                <h3 className="text-sm font-semibold text-white">Payment History</h3>
+                <p className="text-xs text-neutral-500">{paymentHistory.length} transaction{paymentHistory.length !== 1 ? 's' : ''}</p>
               </div>
-              {historyExpanded ? <ChevronUp className="w-5 h-5 text-neutral-500" /> : <ChevronDown className="w-5 h-5 text-neutral-500" />}
-            </button>
+            </div>
+            {historyExpanded ? <ChevronUp className="w-5 h-5 text-neutral-500" /> : <ChevronDown className="w-5 h-5 text-neutral-500" />}
+          </button>
 
-            {historyExpanded && (
-              <div className="border-t border-neutral-800">
-                <div className="divide-y divide-neutral-800">
-                  {paymentHistory.map((payment) => {
-                    const badge = getStatusBadge(payment.status);
-                    const isCompleted = payment.status === 'completed';
-                    const isReceiptOpen = expandedReceipt === payment.id;
-                    return (
-                      <div key={payment.id} className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="flex-shrink-0">
-                              {payment.status === 'completed' ? <CheckCircle2 className="w-5 h-5 text-green-400" />
-                                : payment.status === 'failed' ? <XCircle className="w-5 h-5 text-red-400" />
-                                : <Clock className="w-5 h-5 text-gold-400" />}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-white truncate">
-                                {payment.description || payment.payment_type.replace(/_/g, ' ')}
-                              </p>
-                              <p className="text-xs text-neutral-500">{formatDate(payment.created_at)}</p>
-                            </div>
+          {historyExpanded && (
+            <div className="border-t border-neutral-800">
+              <div className="divide-y divide-neutral-800">
+                {paymentHistory.map((payment) => {
+                  const badge = getStatusBadge(payment.status);
+                  const isCompleted = payment.status === 'completed';
+                  const isReceiptOpen = expandedReceipt === payment.id;
+                  return (
+                    <div key={payment.id} className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex-shrink-0">
+                            {payment.status === 'completed' ? <CheckCircle2 className="w-5 h-5 text-green-400" />
+                              : payment.status === 'failed' ? <XCircle className="w-5 h-5 text-red-400" />
+                              : payment.status === 'bank_transfer_pending' ? <Clock className="w-5 h-5 text-blue-400" />
+                              : <Clock className="w-5 h-5 text-gold-400" />}
                           </div>
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            <p className="text-sm font-semibold text-gold-400">{formatCurrency(payment.amount)}</p>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${badge.className}`}>
-                              {badge.label}
-                            </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-white truncate">
+                              {payment.description || payment.payment_type.replace(/_/g, ' ')}
+                            </p>
+                            <p className="text-xs text-neutral-500">{formatDate(payment.created_at)}</p>
                           </div>
                         </div>
-                        {isCompleted && (
-                          <div className="mt-3">
-                            <button
-                              onClick={() => setExpandedReceipt(prev => prev === payment.id ? null : payment.id)}
-                              className="flex items-center gap-1.5 text-xs text-gold-400 hover:text-gold-300 transition-colors"
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                              {isReceiptOpen ? 'Hide Receipt' : 'View Receipt'}
-                            </button>
-                            {isReceiptOpen && (
-                              <div className="mt-3 bg-neutral-800 rounded-xl p-4 space-y-2">
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-neutral-500">Transaction ID</span>
-                                  <span className="text-neutral-300 font-mono">{payment.paychangu_tx_id || '--'}</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-neutral-500">Reference</span>
-                                  <span className="text-neutral-300 font-mono">{payment.paychangu_reference || '--'}</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-neutral-500">Amount</span>
-                                  <span className="text-gold-400 font-medium">{formatCurrency(payment.amount)}</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-neutral-500">Date</span>
-                                  <span className="text-neutral-300">{formatDate(payment.completed_at || payment.created_at)}</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-neutral-500">Method</span>
-                                  <span className="text-neutral-300 capitalize">{payment.payment_method.replace(/_/g, ' ') || '--'}</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <p className="text-sm font-semibold text-gold-400">{formatCurrency(payment.amount)}</p>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${badge.className}`}>
+                            {badge.label}
+                          </span>
+                        </div>
                       </div>
-                    );
-                  })}
-                </div>
+                      {(isCompleted || payment.status === 'bank_transfer_pending') && (
+                        <div className="mt-3">
+                          <button
+                            onClick={() => setExpandedReceipt(prev => prev === payment.id ? null : payment.id)}
+                            className="flex items-center gap-1.5 text-xs text-gold-400 hover:text-gold-300 transition-colors"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            {isReceiptOpen ? 'Hide Details' : 'View Details'}
+                          </button>
+                          {isReceiptOpen && (
+                            <div className="mt-3 bg-neutral-800 rounded-xl p-4 space-y-2">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-neutral-500">Transaction ID</span>
+                                <span className="text-neutral-300 font-mono">{payment.paychangu_tx_id || '--'}</span>
+                              </div>
+                              <div className="flex justify-between text-xs">
+                                <span className="text-neutral-500">Reference</span>
+                                <span className="text-neutral-300 font-mono">{payment.paychangu_reference || '--'}</span>
+                              </div>
+                              <div className="flex justify-between text-xs">
+                                <span className="text-neutral-500">Amount</span>
+                                <span className="text-gold-400 font-medium">{formatCurrency(payment.amount)}</span>
+                              </div>
+                              <div className="flex justify-between text-xs">
+                                <span className="text-neutral-500">Date</span>
+                                <span className="text-neutral-300">{formatDate(payment.completed_at || payment.created_at)}</span>
+                              </div>
+                              <div className="flex justify-between text-xs">
+                                <span className="text-neutral-500">Method</span>
+                                <span className="text-neutral-300 capitalize">{payment.payment_method.replace(/_/g, ' ') || '--'}</span>
+                              </div>
+                              {payment.admin_notes && (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-neutral-500">Admin Notes</span>
+                                  <span className="text-neutral-300">{payment.admin_notes}</span>
+                                </div>
+                              )}
+                              {payment.proof_of_payment_url && (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-neutral-500">Proof</span>
+                                  <a href={payment.proof_of_payment_url} target="_blank" rel="noopener noreferrer" className="text-gold-400 hover:underline">View Proof</a>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

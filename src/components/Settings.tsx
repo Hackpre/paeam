@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
-import { validatePassword } from '../lib/utils';
-import type { IpiApplication } from '../lib/types';
+import { validatePassword, formatCurrency, formatDate } from '../lib/utils';
+import type { IpiApplication, Payment } from '../lib/types';
+import PaymentModal from './PaymentModal';
 import {
   Sun,
   Moon,
@@ -28,9 +29,10 @@ import {
   FileJson,
   FileSpreadsheet,
   Hash,
+  CreditCard,
 } from 'lucide-react';
 
-type SettingsTab = 'appearance' | 'language' | 'notifications' | 'security' | 'account' | 'api';
+type SettingsTab = 'appearance' | 'language' | 'notifications' | 'security' | 'account' | 'billing' | 'api';
 
 interface NotificationSettings {
   email: boolean;
@@ -45,6 +47,7 @@ const TAB_CONFIG: { id: SettingsTab; label: string; icon: typeof Sun }[] = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'security', label: 'Security', icon: Shield },
   { id: 'account', label: 'Account', icon: User },
+  { id: 'billing', label: 'Billing & Payments', icon: CreditCard },
   { id: 'api', label: 'API & Integrations', icon: Link2 },
 ];
 
@@ -144,6 +147,11 @@ export default function Settings() {
   const [ipiApplication, setIpiApplication] = useState<IpiApplication | null>(null);
   const [ipiLoading, setIpiLoading] = useState(false);
   const [ipiMessage, setIpiMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Billing state
+  const [billingPayments, setBillingPayments] = useState<Payment[]>([]);
+  const [billingLoading, setBillingLoading] = useState(true);
+  const [showBillingPaymentModal, setShowBillingPaymentModal] = useState(false);
 
   // Export state
   const [exportLoading, setExportLoading] = useState(false);
@@ -397,6 +405,26 @@ export default function Settings() {
     };
     loadIpiApplication();
   }, [profile]);
+
+  // Load billing data
+  useEffect(() => {
+    if (!user) { setBillingLoading(false); return; }
+    const loadBilling = async () => {
+      try {
+        const { data } = await supabase
+          .from('payments')
+          .select('*')
+          .eq('user_id', user!.id)
+          .order('created_at', { ascending: false });
+        setBillingPayments((data ?? []) as Payment[]);
+      } catch {
+        // silently fail
+      } finally {
+        setBillingLoading(false);
+      }
+    };
+    loadBilling();
+  }, [user]);
 
   // Request IPI number
   const handleRequestIPI = async () => {
@@ -1009,6 +1037,139 @@ export default function Settings() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ======================== BILLING & PAYMENTS TAB ======================== */}
+          {activeTab === 'billing' && (
+            <div className="space-y-8">
+              <PaymentModal
+                isOpen={showBillingPaymentModal}
+                onClose={() => setShowBillingPaymentModal(false)}
+              />
+
+              {/* Membership Status */}
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-4">Membership Status</h2>
+                <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gold-500/10 rounded-lg flex items-center justify-center">
+                        <CreditCard className="w-5 h-5 text-gold-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-white">
+                          {profile?.membership_status === 'active' ? 'Active Member' :
+                           profile?.membership_status === 'bank_transfer_pending' ? 'Pending Verification' :
+                           profile?.membership_status === 'trial' ? 'Free Trial' :
+                           profile?.membership_status === 'grace' ? 'Grace Period' :
+                           profile?.membership_status === 'suspended' ? 'Suspended' : 'Unknown'}
+                        </p>
+                        {profile?.membership_expires_at && (
+                          <p className="text-xs text-neutral-500">Expires: {formatDate(profile.membership_expires_at)}</p>
+                        )}
+                      </div>
+                    </div>
+                    {profile?.membership_status !== 'active' && profile?.membership_status !== 'bank_transfer_pending' && (
+                      <button
+                        onClick={() => setShowBillingPaymentModal(true)}
+                        className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-black font-semibold rounded-lg text-sm transition-colors"
+                      >
+                        Pay Now
+                      </button>
+                    )}
+                  </div>
+                  {profile?.membership_status === 'bank_transfer_pending' && (
+                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex items-start gap-2">
+                      <Clock className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-blue-400">Your bank transfer proof is under review. You will be notified once verified.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Bank Transfer Details */}
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-4">Bank Transfer Details</h2>
+                <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-6">
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-neutral-500 uppercase tracking-wider">Account Name</p>
+                      <p className="text-sm text-white font-medium">Producers & Audio Engineering Association of Malawi</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-neutral-500 uppercase tracking-wider">Account Number</p>
+                      <p className="text-sm text-white font-mono font-bold text-lg">1014312125</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-neutral-500 uppercase tracking-wider">Bank</p>
+                      <p className="text-sm text-white">National Bank of Malawi</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-neutral-500 uppercase tracking-wider">Branch</p>
+                      <p className="text-sm text-white">Henderson Street Branch, Blantyre</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-neutral-500 uppercase tracking-wider">Reference</p>
+                      <p className="text-sm text-gold-400 font-mono">{user?.email || 'your.email@example.com'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment History */}
+              <div>
+                <h2 className="text-xl font-semibold text-white mb-4">Payment History</h2>
+                {billingLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="w-6 h-6 border-2 border-gold-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : billingPayments.length === 0 ? (
+                  <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-8 text-center">
+                    <CreditCard className="w-10 h-10 text-neutral-600 mx-auto mb-3" />
+                    <p className="text-neutral-400 text-sm">No payment history yet.</p>
+                  </div>
+                ) : (
+                  <div className="bg-neutral-900 rounded-xl border border-neutral-800 divide-y divide-neutral-800">
+                    {billingPayments.map((payment) => {
+                      const statusClass = payment.status === 'completed'
+                        ? 'text-green-400 bg-green-500/10'
+                        : payment.status === 'failed'
+                        ? 'text-red-400 bg-red-500/10'
+                        : payment.status === 'bank_transfer_pending'
+                        ? 'text-blue-400 bg-blue-500/10'
+                        : 'text-yellow-400 bg-yellow-500/10';
+                      const statusLabel = payment.status === 'bank_transfer_pending'
+                        ? 'Pending Verification'
+                        : payment.status.charAt(0).toUpperCase() + payment.status.slice(1);
+                      return (
+                        <div key={payment.id} className="flex items-center justify-between px-6 py-4">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="flex-shrink-0">
+                              {payment.status === 'completed' ? <CheckCircle2 className="w-5 h-5 text-green-400" />
+                                : payment.status === 'failed' ? <XCircle className="w-5 h-5 text-red-400" />
+                                : payment.status === 'bank_transfer_pending' ? <Clock className="w-5 h-5 text-blue-400" />
+                                : <Clock className="w-5 h-5 text-yellow-400" />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-white truncate">
+                                {payment.description || payment.payment_type.replace(/_/g, ' ')}
+                              </p>
+                              <p className="text-xs text-neutral-500">{formatDate(payment.created_at)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <p className="text-sm font-semibold text-gold-400">{formatCurrency(payment.amount)}</p>
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusClass}`}>
+                              {statusLabel}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

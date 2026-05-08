@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import type { ProducerProfile, CatalogEntry, Payment } from '../lib/types';
 import { formatCurrency, formatDate, getMembershipBadge } from '../lib/utils';
+import PaymentModal from './PaymentModal';
 import { Disc3, FileText, Lock, Clock, Shield, CheckCircle2, AlertTriangle, CreditCard, Upload, Plus, Hash, History, Search, Music, ArrowRight, CircleUser as UserCircle } from 'lucide-react';
 
 export default function Dashboard() {
@@ -15,6 +16,7 @@ export default function Dashboard() {
   const [lockedCount, setLockedCount] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [recentPayments, setRecentPayments] = useState<Payment[]>([]);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -254,29 +256,58 @@ export default function Dashboard() {
       )}
 
       {/* Payment Status Banner */}
-      {activeProfile && (membershipStatus === 'trial' || membershipStatus === 'grace') && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      {activeProfile && (membershipStatus === 'trial' || membershipStatus === 'grace' || membershipStatus === 'suspended' || membershipStatus === 'bank_transfer_pending') && (
+        <div className={`border rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${
+          membershipStatus === 'bank_transfer_pending'
+            ? 'bg-blue-500/10 border-blue-500/20'
+            : membershipStatus === 'suspended'
+            ? 'bg-red-500/10 border-red-500/20'
+            : 'bg-yellow-500/10 border-yellow-500/20'
+        }`}>
           <div className="flex items-start gap-3">
-            <AlertTriangle size={24} className="text-yellow-500 flex-shrink-0 mt-0.5" />
+            <AlertTriangle size={24} className={`flex-shrink-0 mt-0.5 ${
+              membershipStatus === 'bank_transfer_pending' ? 'text-blue-500'
+                : membershipStatus === 'suspended' ? 'text-red-500'
+                : 'text-yellow-500'
+            }`} />
             <div>
-              <p className="text-yellow-500 font-semibold">
-                {membershipStatus === 'trial' ? 'Trial Period' : 'Grace Period'}
+              <p className={`font-semibold ${
+                membershipStatus === 'bank_transfer_pending' ? 'text-blue-500'
+                  : membershipStatus === 'suspended' ? 'text-red-500'
+                  : 'text-yellow-500'
+              }`}>
+                {membershipStatus === 'bank_transfer_pending' ? 'Payment Under Review'
+                  : membershipStatus === 'suspended' ? 'Membership Suspended'
+                  : membershipStatus === 'trial' ? 'Trial Period'
+                  : 'Grace Period'}
               </p>
               <p className="text-neutral-400 text-sm">
-                {membershipStatus === 'trial'
-                  ? 'Complete your membership payment to unlock full access.'
+                {membershipStatus === 'bank_transfer_pending'
+                  ? 'Your bank transfer proof is being reviewed. You will be notified once verified.'
+                  : membershipStatus === 'suspended'
+                  ? 'Your membership fee of 15,000 MWK is overdue. Complete payment to restore access.'
+                  : membershipStatus === 'trial'
+                  ? 'Your membership fee of 15,000 MWK is pending. Complete payment to unlock full access.'
                   : 'Your membership payment is overdue. Complete payment to avoid suspension.'}
               </p>
             </div>
           </div>
-          <button
-            onClick={() => navigateTo('payment')}
-            className="px-4 py-2 bg-gold-600 hover:bg-gold-500 text-neutral-950 font-semibold rounded-lg text-sm transition-colors"
-          >
-            Complete Payment
-          </button>
+          {membershipStatus !== 'bank_transfer_pending' && (
+            <button
+              onClick={() => setShowPaymentModal(true)}
+              className="px-4 py-2 bg-gold-600 hover:bg-gold-500 text-neutral-950 font-semibold rounded-lg text-sm transition-colors flex-shrink-0"
+            >
+              Pay Now
+            </button>
+          )}
         </div>
       )}
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+      />
 
       {/* Welcome Card */}
       {activeProfile && (

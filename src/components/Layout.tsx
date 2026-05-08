@@ -12,8 +12,8 @@ import {
   ChevronRight,
   Shield,
   Scale,
-  AlertTriangle,
   Settings,
+  CreditCard,
 } from 'lucide-react';
 
 type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit' | 'payment' | 'admin' | 'disputes' | 'settings';
@@ -21,7 +21,7 @@ type Page = 'dashboard' | 'profile' | 'catalog' | 'contracts' | 'locks' | 'audit
 interface LayoutProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
-  navItems?: { id: Page; label: string }[];
+  navItems?: { id: Page; label: string; badge?: string }[];
   children: React.ReactNode;
 }
 
@@ -34,7 +34,7 @@ const iconMap: Record<string, React.ReactNode> = {
   disputes: <Scale size={20} />,
   audit: <ChevronRight size={20} />,
   admin: <Shield size={20} />,
-  payment: <AlertTriangle size={20} />,
+  payment: <CreditCard size={20} />,
   settings: <Settings size={20} />,
 };
 
@@ -98,6 +98,11 @@ export default function Layout({ currentPage, onNavigate, navItems = defaultNavI
             >
               {iconMap[item.id] || <ChevronRight size={20} />}
               {item.label}
+              {item.badge && (
+                <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
+                  {item.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>

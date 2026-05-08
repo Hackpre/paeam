@@ -23,11 +23,14 @@ import {
   Calendar,
   Search,
   Filter,
+  Eye,
+  X,
+  Building2,
 } from 'lucide-react';
 
 type TabKey = 'overview' | 'producers' | 'payments' | 'content' | 'disputes' | 'users';
 type VerificationFilter = 'all' | 'pending' | 'verified' | 'rejected' | 'suspended';
-type PaymentFilter = 'all' | 'pending' | 'completed' | 'failed';
+type PaymentFilter = 'all' | 'pending' | 'completed' | 'failed' | 'bank_transfer_pending';
 
 const ROLES: UserRoleAssignment['role'][] = [
   'super_admin',
@@ -74,6 +77,10 @@ export default function AdminDashboard() {
   });
 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [proofModalUrl, setProofModalUrl] = useState<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ paymentId: string; action: 'approved' | 'rejected' } | null>(null);
+  const [confirmNotes, setConfirmNotes] = useState('');
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   const loadOverviewStats = useCallback(async () => {
     const { count: totalProducers } = await supabase
@@ -485,6 +492,41 @@ export default function AdminDashboard() {
     setActionLoading(null);
   };
 
+  const handleConfirmBankTransfer = async () => {
+    if (!confirmModal || !user) return;
+    setConfirmLoading(true);
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pay`;
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          action: 'confirm_bank_transfer',
+          payment_id: confirmModal.paymentId,
+          decision: confirmModal.action,
+          admin_notes: confirmNotes,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        alert(data.error || 'Failed to process bank transfer confirmation.');
+      } else {
+        await Promise.all([loadPayments(), loadOverviewStats(), loadProducers()]);
+      }
+    } catch (err) {
+      alert('Network error processing bank transfer.');
+    } finally {
+      setConfirmLoading(false);
+      setConfirmModal(null);
+      setConfirmNotes('');
+    }
+  };
+
   // --- Filtered lists ---
 
   const filteredProducers = producers.filter((p) => {
@@ -533,6 +575,8 @@ export default function AdminDashboard() {
         return <span className="text-xs text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">Failed</span>;
       case 'refunded':
         return <span className="text-xs text-neutral-400 bg-neutral-500/10 px-2 py-0.5 rounded-full">Refunded</span>;
+      case 'bank_transfer_pending':
+        return <span className="text-xs text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full">Bank Transfer Pending</span>;
       default:
         return <span className="text-xs text-neutral-400 bg-neutral-500/10 px-2 py-0.5 rounded-full">{status}</span>;
     }
@@ -874,72 +918,255 @@ export default function AdminDashboard() {
 
       {/* ===== Payments Tab ===== */}
       {activeTab === 'payments' && (
-        <div className="space-y-4">
-          {/* Filter Controls */}
-          <div className="flex items-center gap-3">
-            <Filter size={16} className="text-neutral-500" />
-            <select
-              value={paymentFilter}
-              onChange={(e) => setPaymentFilter(e.target.value as PaymentFilter)}
-              className="appearance-none bg-neutral-900 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-neutral-200 focus:outline-none focus:border-gold-600 transition-colors pr-10"
-            >
-              <option value="all">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
-            </select>
-            <ChevronDown size={14} className="text-neutral-400 pointer-events-none -ml-7" />
+        <div className="space-y-6">
+          {/* Pending Bank Transfers Section */}
+          {payments.filter(p => p.status === 'bank_transfer_pending').length > 0 && (
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                <Building2 size={18} className="text-blue-400" />
+                Pending Bank Transfers
+                <span className="text-sm font-normal text-neutral-500">
+                  ({payments.filter(p => p.status === 'bank_transfer_pending').length})
+                </span>
+              </h3>
+              <div className="space-y-3">
+                {payments.filter(p => p.status === 'bank_transfer_pending').map((payment) => {
+                  const producer = producers.find((p) => p.id === payment.producer_id);
+                  const producerName = producer ? producer.full_legal_name : 'Unknown';
+                  const producerEmail = producer ? producer.email : payment.user_id;
+                  return (
+                    <div key={payment.id} className="bg-neutral-900 border border-blue-500/20 rounded-xl p-5">
+                      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                        <div className="flex items-start gap-4 min-w-0">
+                          <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                            <CreditCard size={24} className="text-blue-400" />
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-lg font-semibold text-white">{producerName}</h4>
+                            <p className="text-neutral-400 text-sm">{producerEmail}</p>
+                            <p className="text-gold-400 font-semibold text-sm mt-1">{formatCurrency(payment.amount)} MWK</p>
+                            <p className="text-xs text-neutral-500 mt-1">Submitted: {formatDate(payment.created_at)}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2 flex-shrink-0">
+                          {payment.proof_of_payment_url && (
+                            <button
+                              onClick={() => setProofModalUrl(payment.proof_of_payment_url)}
+                              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-1.5 text-sm"
+                            >
+                              <Eye size={14} /> View Proof
+                            </button>
+                          )}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setConfirmModal({ paymentId: payment.id, action: 'approved' })}
+                              disabled={actionLoading === payment.id}
+                              className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-neutral-950 font-semibold rounded-lg transition-colors flex items-center gap-1.5 text-sm disabled:opacity-50"
+                            >
+                              <CheckCircle2 size={14} /> Approve
+                            </button>
+                            <button
+                              onClick={() => setConfirmModal({ paymentId: payment.id, action: 'rejected' })}
+                              disabled={actionLoading === payment.id}
+                              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-1.5 text-sm disabled:opacity-50"
+                            >
+                              <XCircle size={14} /> Reject
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* All Payments */}
+          <div>
+            <h3 className="text-lg font-semibold text-white mb-3">All Payments</h3>
+            {/* Filter Controls */}
+            <div className="flex items-center gap-3 mb-4">
+              <Filter size={16} className="text-neutral-500" />
+              <select
+                value={paymentFilter}
+                onChange={(e) => setPaymentFilter(e.target.value as PaymentFilter)}
+                className="appearance-none bg-neutral-900 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-neutral-200 focus:outline-none focus:border-gold-600 transition-colors pr-10"
+              >
+                <option value="all">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="bank_transfer_pending">Bank Transfer Pending</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+              </select>
+              <ChevronDown size={14} className="text-neutral-400 pointer-events-none -ml-7" />
+            </div>
+
+            {/* Payments List */}
+            {filteredPayments.length === 0 ? (
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-8 text-center">
+                <CreditCard size={48} className="text-neutral-600 mx-auto mb-3" />
+                <p className="text-neutral-400">No payments found.</p>
+              </div>
+            ) : (
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-neutral-800">
+                        <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Producer</th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Amount</th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Type</th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Status</th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Date</th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Method</th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-800">
+                      {filteredPayments.map((payment) => {
+                        const producer = producers.find((p) => p.id === payment.producer_id);
+                        const producerName = producer ? producer.full_legal_name : payment.producer_id || 'Unknown';
+                        return (
+                          <tr key={payment.id} className="hover:bg-neutral-800/50 transition-colors">
+                            <td className="px-5 py-4 text-sm text-white font-medium">{producerName}</td>
+                            <td className="px-5 py-4 text-sm text-gold-400 font-semibold">{formatCurrency(payment.amount)}</td>
+                            <td className="px-5 py-4 text-sm text-neutral-300">{payment.payment_type.replace(/_/g, ' ')}</td>
+                            <td className="px-5 py-4">{paymentStatusBadge(payment.status)}</td>
+                            <td className="px-5 py-4 text-sm text-neutral-500">{formatDate(payment.created_at)}</td>
+                            <td className="px-5 py-4 text-sm text-neutral-400">{paymentMethodLabel(payment.payment_method)}</td>
+                            <td className="px-5 py-4">
+                              <div className="flex items-center gap-2">
+                                {payment.status === 'pending' && (
+                                  <button
+                                    onClick={() => confirmPayment(payment.id, payment.producer_id)}
+                                    disabled={actionLoading === payment.id}
+                                    className="px-3 py-1.5 bg-gold-600 hover:bg-gold-700 text-neutral-950 text-xs font-semibold rounded-md transition-colors disabled:opacity-50"
+                                  >
+                                    Confirm
+                                  </button>
+                                )}
+                                {payment.status === 'bank_transfer_pending' && (
+                                  <>
+                                    {payment.proof_of_payment_url && (
+                                      <button
+                                        onClick={() => setProofModalUrl(payment.proof_of_payment_url)}
+                                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold rounded-md transition-colors flex items-center gap-1"
+                                      >
+                                        <Eye size={12} /> Proof
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => setConfirmModal({ paymentId: payment.id, action: 'approved' })}
+                                      className="px-3 py-1.5 bg-gold-600 hover:bg-gold-700 text-neutral-950 text-xs font-semibold rounded-md transition-colors"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmModal({ paymentId: payment.id, action: 'rejected' })}
+                                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-md transition-colors"
+                                    >
+                                      Reject
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Payments List */}
-          {filteredPayments.length === 0 ? (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-8 text-center">
-              <CreditCard size={48} className="text-neutral-600 mx-auto mb-3" />
-              <p className="text-neutral-400">No payments found.</p>
+          {/* Proof of Payment Modal */}
+          {proofModalUrl && (
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+                <div className="flex items-center justify-between p-4 border-b border-neutral-800">
+                  <h3 className="text-lg font-semibold text-white">Proof of Payment</h3>
+                  <button onClick={() => setProofModalUrl(null)} className="text-neutral-400 hover:text-white">
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="p-4 overflow-auto max-h-[70vh]">
+                  {proofModalUrl.endsWith('.pdf') ? (
+                    <iframe src={proofModalUrl} className="w-full h-[60vh] rounded-lg" title="Proof of Payment" />
+                  ) : (
+                    <img src={proofModalUrl} alt="Proof of Payment" className="max-w-full mx-auto rounded-lg" />
+                  )}
+                </div>
+                <div className="p-4 border-t border-neutral-800 flex justify-end">
+                  <a
+                    href={proofModalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-gold-600 hover:bg-gold-700 text-neutral-950 font-semibold rounded-lg text-sm transition-colors"
+                  >
+                    Open in New Tab
+                  </a>
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-neutral-800">
-                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Producer</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Amount</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Type</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Status</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Date</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Method</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-800">
-                    {filteredPayments.map((payment) => {
-                      const producer = producers.find((p) => p.id === payment.producer_id);
-                      const producerName = producer ? producer.full_legal_name : payment.producer_id || 'Unknown';
-                      return (
-                        <tr key={payment.id} className="hover:bg-neutral-800/50 transition-colors">
-                          <td className="px-5 py-4 text-sm text-white font-medium">{producerName}</td>
-                          <td className="px-5 py-4 text-sm text-gold-400 font-semibold">{formatCurrency(payment.amount)}</td>
-                          <td className="px-5 py-4 text-sm text-neutral-300">{payment.payment_type.replace(/_/g, ' ')}</td>
-                          <td className="px-5 py-4">{paymentStatusBadge(payment.status)}</td>
-                          <td className="px-5 py-4 text-sm text-neutral-500">{formatDate(payment.created_at)}</td>
-                          <td className="px-5 py-4 text-sm text-neutral-400">{paymentMethodLabel(payment.payment_method)}</td>
-                          <td className="px-5 py-4">
-                            {payment.status === 'pending' && (
-                              <button
-                                onClick={() => confirmPayment(payment.id, payment.producer_id)}
-                                disabled={actionLoading === payment.id}
-                                className="px-3 py-1.5 bg-gold-600 hover:bg-gold-700 text-neutral-950 text-xs font-semibold rounded-md transition-colors disabled:opacity-50"
-                              >
-                                Confirm Payment
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+          )}
+
+          {/* Confirm Bank Transfer Modal */}
+          {confirmModal && (
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    confirmModal.action === 'approved' ? 'bg-green-500/10' : 'bg-red-500/10'
+                  }`}>
+                    {confirmModal.action === 'approved'
+                      ? <CheckCircle2 className="w-5 h-5 text-green-400" />
+                      : <XCircle className="w-5 h-5 text-red-400" />}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">
+                      {confirmModal.action === 'approved' ? 'Approve Bank Transfer' : 'Reject Bank Transfer'}
+                    </h3>
+                    <p className="text-xs text-neutral-400">
+                      {confirmModal.action === 'approved'
+                        ? 'This will activate the user\'s membership.'
+                        : 'This will mark the payment as failed.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">Admin Notes</label>
+                  <textarea
+                    value={confirmNotes}
+                    onChange={(e) => setConfirmNotes(e.target.value)}
+                    rows={3}
+                    className="w-full bg-neutral-800 border border-neutral-700 rounded-xl text-white px-4 py-3 focus:outline-none focus:border-gold-600 focus:ring-1 focus:ring-gold-600 transition-colors placeholder:text-neutral-500 text-sm"
+                    placeholder={confirmModal.action === 'approved' ? 'Optional approval notes...' : 'Reason for rejection...'}
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setConfirmModal(null); setConfirmNotes(''); }}
+                    className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white font-medium px-4 py-2.5 rounded-xl border border-neutral-700 transition-colors text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmBankTransfer}
+                    disabled={confirmLoading}
+                    className={`flex-1 font-medium px-4 py-2.5 rounded-xl transition-colors text-sm text-white disabled:opacity-50 ${
+                      confirmModal.action === 'approved'
+                        ? 'bg-gold-600 hover:bg-gold-700 text-neutral-950'
+                        : 'bg-red-600 hover:bg-red-700'
+                    }`}
+                  >
+                    {confirmLoading ? 'Processing...' : confirmModal.action === 'approved' ? 'Approve' : 'Reject'}
+                  </button>
+                </div>
               </div>
             </div>
           )}

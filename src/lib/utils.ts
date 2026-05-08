@@ -72,6 +72,7 @@ export function getMembershipBadge(status: string): { label: string; color: stri
     case 'trial': return { label: 'Free Trial', color: 'text-gold-400 bg-gold-500/10' };
     case 'grace': return { label: 'Grace Period', color: 'text-yellow-400 bg-yellow-500/10' };
     case 'suspended': return { label: 'Suspended', color: 'text-red-400 bg-red-500/10' };
+    case 'bank_transfer_pending': return { label: 'Pending Verification', color: 'text-blue-400 bg-blue-500/10' };
     default: return { label: 'Unknown', color: 'text-neutral-400 bg-neutral-500/10' };
   }
 }
