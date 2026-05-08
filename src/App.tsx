@@ -28,6 +28,9 @@ function AppContent() {
   useEffect(() => {
     if (user) {
       setView('app');
+    } else {
+      setView('landing');
+      setCurrentPage('dashboard');
     }
   }, [user]);
 

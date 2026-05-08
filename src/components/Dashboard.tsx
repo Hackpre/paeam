@@ -201,14 +201,28 @@ export default function Dashboard() {
   }
 
   function getLockStatusBadge(entry: CatalogEntry) {
-    if (entry.approval_status === 'locked' || entry.is_locked) {
+    if (entry.approval_status === 'fully_locked' || (entry.is_locked && entry.approval_status === 'locked')) {
       return (
         <span className="inline-flex items-center gap-1 text-xs font-medium text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2 py-0.5 rounded-full">
-          <Lock size={10} /> Locked - Immutable
+          <Lock size={10} /> Fully Locked
         </span>
       );
     }
-    if (entry.approval_status === 'pending') {
+    if (entry.approval_status === 'pending_association_approval') {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full">
+          <Shield size={10} /> Awaiting PAEAM
+        </span>
+      );
+    }
+    if (entry.approval_status === 'pending_artist_approval') {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full">
+          <Clock size={10} /> Awaiting Artist
+        </span>
+      );
+    }
+    if (entry.approval_status === 'pending' || entry.approval_status === 'pending_admin_approval') {
       return (
         <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded-full">
           <Clock size={10} /> Pending Admin Approval

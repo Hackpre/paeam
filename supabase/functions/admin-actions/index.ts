@@ -55,7 +55,6 @@ Deno.serve(async (req: Request) => {
 
       if (error) throw new Error(error.message);
 
-      // Get producer info for notification
       const { data: producer } = await supabase
         .from('producer_profiles')
         .select('user_id, email, full_legal_name')
@@ -151,7 +150,6 @@ Deno.serve(async (req: Request) => {
 
       if (error) throw new Error(error.message);
 
-      // Get song info for notification
       const { data: song } = await supabase
         .from('catalog_entries')
         .select('song_title, producer_id, producer_profiles(user_id)')
@@ -164,7 +162,7 @@ Deno.serve(async (req: Request) => {
           await supabase.from('notifications').insert({
             user_id: producerUserId,
             type: 'song_approved',
-            title: 'Song Approved by PAEAM',
+            title: 'Your song has been approved by PAEAM',
             message: `Your song "${song.song_title}" has been approved. You can now initiate a Three-Way Lock to protect it.`,
             channel: 'email',
             status: 'queued',
@@ -193,11 +191,13 @@ Deno.serve(async (req: Request) => {
       if (!song_id) throw new Error('song_id is required.');
       if (!reason) throw new Error('Rejection reason is required.');
 
+      const now = new Date().toISOString();
       const { error } = await supabase
         .from('catalog_entries')
         .update({
           approval_status: 'rejected',
           rejection_reason: reason,
+          rejection_date: now,
         })
         .eq('id', song_id);
 
@@ -215,8 +215,8 @@ Deno.serve(async (req: Request) => {
           await supabase.from('notifications').insert({
             user_id: producerUserId,
             type: 'song_rejected',
-            title: 'Song Requires Revision',
-            message: `Your song "${song.song_title}" was not approved. Reason: ${reason}`,
+            title: 'Your song requires revision',
+            message: `Your song "${song.song_title}" was rejected. Reason: ${reason}. Please revise and resubmit.`,
             channel: 'email',
             status: 'queued',
             reference_type: 'catalog_entry',
@@ -298,11 +298,13 @@ Deno.serve(async (req: Request) => {
       if (!contract_id) throw new Error('contract_id is required.');
       if (!reason) throw new Error('Rejection reason is required.');
 
+      const now = new Date().toISOString();
       const { error } = await supabase
         .from('contracts')
         .update({
           approval_status: 'rejected',
           rejection_reason: reason,
+          rejection_date: now,
         })
         .eq('id', contract_id);
 
@@ -348,7 +350,6 @@ Deno.serve(async (req: Request) => {
       const { lock_id } = body;
       if (!lock_id) throw new Error('lock_id is required.');
 
-      // Get the lock approval record
       const { data: lockApproval } = await supabase
         .from('lock_approvals')
         .select('*')
@@ -356,21 +357,12 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       if (!lockApproval) throw new Error('Lock approval record not found.');
-
-      // Verify both producer and artist have approved
-      if (!lockApproval.producer_approved) {
-        throw new Error('Cannot finalize lock: Producer has not approved yet.');
-      }
-      if (!lockApproval.artist_approved) {
-        throw new Error('Cannot finalize lock: Artist has not approved yet.');
-      }
-      if (lockApproval.association_approved) {
-        throw new Error('This lock has already been finalized.');
-      }
+      if (!lockApproval.producer_approved) throw new Error('Cannot finalize lock: Producer has not approved yet.');
+      if (!lockApproval.artist_approved) throw new Error('Cannot finalize lock: Artist has not approved yet.');
+      if (lockApproval.association_approved) throw new Error('This lock has already been finalized.');
 
       const now = new Date().toISOString();
 
-      // Update lock approval
       const { error: lockError } = await supabase
         .from('lock_approvals')
         .update({
@@ -380,14 +372,13 @@ Deno.serve(async (req: Request) => {
           association_id: user.id,
           is_fully_locked: true,
           locked_at: now,
+          lock_completed_at: now,
         })
         .eq('id', lock_id);
 
       if (lockError) throw new Error(lockError.message);
 
-      // Update the record (catalog entry or contract) to locked status
       if (lockApproval.record_type === 'catalog_entry') {
-        // Generate content hash for immutability
         const { data: entry } = await supabase
           .from('catalog_entries')
           .select('id, song_title, artist_names, genre, isrc_code, producer_name')
@@ -411,7 +402,7 @@ Deno.serve(async (req: Request) => {
             .update({
               is_locked: true,
               content_hash: contentHash,
-              approval_status: 'locked',
+              approval_status: 'fully_locked',
             })
             .eq('id', lockApproval.record_id);
 
@@ -428,14 +419,28 @@ Deno.serve(async (req: Request) => {
               await supabase.from('notifications').insert({
                 user_id: producerUserId,
                 type: 'lock_finalized',
-                title: 'Record Locked and Immutable',
-                message: `Your song "${entry.song_title}" has been sealed by PAEAM and is now legally protected. Content hash: ${contentHash.substring(0, 16)}...`,
+                title: 'Record locked by PAEAM',
+                message: `The record "${entry.song_title}" has been fully locked and is now immutable. Content hash: ${contentHash.substring(0, 16)}...`,
                 channel: 'email',
                 status: 'queued',
                 reference_type: 'lock_approval',
                 reference_id: lock_id,
               });
             }
+          }
+
+          // Notify artist if artist_id exists
+          if (lockApproval.artist_id) {
+            await supabase.from('notifications').insert({
+              user_id: lockApproval.artist_id,
+              type: 'lock_finalized',
+              title: 'Record locked by PAEAM',
+              message: `The record "${entry.song_title}" has been fully locked and is now immutable.`,
+              channel: 'email',
+              status: 'queued',
+              reference_type: 'lock_approval',
+              reference_id: lock_id,
+            });
           }
         }
       } else if (lockApproval.record_type === 'contract') {
@@ -458,7 +463,7 @@ Deno.serve(async (req: Request) => {
             .update({
               is_locked: true,
               content_hash: contentHash,
-              approval_status: 'locked',
+              approval_status: 'fully_locked',
             })
             .eq('id', lockApproval.record_id);
 
@@ -469,6 +474,19 @@ Deno.serve(async (req: Request) => {
               type: 'lock_finalized',
               title: 'Contract Locked and Immutable',
               message: `Your ${contract.contract_type.replace(/_/g, ' ')} contract has been sealed by PAEAM and is now legally protected.`,
+              channel: 'email',
+              status: 'queued',
+              reference_type: 'lock_approval',
+              reference_id: lock_id,
+            });
+          }
+
+          if (lockApproval.artist_id) {
+            await supabase.from('notifications').insert({
+              user_id: lockApproval.artist_id,
+              type: 'lock_finalized',
+              title: 'Record locked by PAEAM',
+              message: `The contract for "${(contract.catalog_entries as any)?.song_title || 'Unknown'}" has been fully locked and is now immutable.`,
               channel: 'email',
               status: 'queued',
               reference_type: 'lock_approval',
@@ -498,6 +516,258 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // --- ASSIGN IPI NUMBER ---
+    if (action === 'assign_ipi') {
+      const { ipi_request_id, ipi_number } = body;
+      if (!ipi_request_id) throw new Error('ipi_request_id is required.');
+      if (!ipi_number) throw new Error('ipi_number is required.');
+
+      const now = new Date().toISOString();
+
+      // Update the ipi_requests table
+      const { error: reqError } = await supabase
+        .from('ipi_requests')
+        .update({
+          status: 'approved',
+          assigned_ipi: ipi_number,
+          admin_approved_at: now,
+          admin_approved_by: user.id,
+        })
+        .eq('id', ipi_request_id);
+
+      if (reqError) throw new Error(reqError.message);
+
+      // Get the request to find producer
+      const { data: ipiReq } = await supabase
+        .from('ipi_requests')
+        .select('producer_id, requested_by')
+        .eq('id', ipi_request_id)
+        .maybeSingle();
+
+      if (ipiReq) {
+        // Update producer profile with IPI number
+        await supabase
+          .from('producer_profiles')
+          .update({ ipi_number: ipi_number })
+          .eq('id', ipiReq.producer_id);
+
+        // Also update ipi_applications if exists
+        await supabase
+          .from('ipi_applications')
+          .update({
+            status: 'assigned',
+            ipi_number: ipi_number,
+            reviewed_by: user.id,
+            reviewed_at: now,
+          })
+          .eq('producer_id', ipiReq.producer_id)
+          .eq('status', 'pending');
+
+        // Notify producer
+        await supabase.from('notifications').insert({
+          user_id: ipiReq.requested_by,
+          type: 'ipi_assigned',
+          title: 'Your IPI number has been assigned',
+          message: `Your IPI number ${ipi_number} has been assigned by Cosoma via PAEAM.`,
+          channel: 'email',
+          status: 'queued',
+          reference_type: 'ipi_request',
+          reference_id: ipi_request_id,
+        });
+
+        await supabase.from('audit_logs').insert({
+          actor_id: user.id,
+          action: 'ipi_assigned',
+          record_type: 'ipi_request',
+          record_id: ipi_request_id,
+          new_data: { ipi_number, assigned_at: now },
+        });
+      }
+
+      return new Response(JSON.stringify({ status: 'success', message: 'IPI number assigned.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // --- REJECT IPI REQUEST ---
+    if (action === 'reject_ipi') {
+      const { ipi_request_id, reason } = body;
+      if (!ipi_request_id) throw new Error('ipi_request_id is required.');
+
+      const now = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('ipi_requests')
+        .update({
+          status: 'rejected',
+          rejection_reason: reason || 'Not specified',
+          admin_approved_by: user.id,
+        })
+        .eq('id', ipi_request_id);
+
+      if (error) throw new Error(error.message);
+
+      const { data: ipiReq } = await supabase
+        .from('ipi_requests')
+        .select('requested_by')
+        .eq('id', ipi_request_id)
+        .maybeSingle();
+
+      if (ipiReq) {
+        await supabase.from('notifications').insert({
+          user_id: ipiReq.requested_by,
+          type: 'ipi_rejected',
+          title: 'IPI Number Request Rejected',
+          message: `Your IPI number request was not approved. Reason: ${reason || 'Not specified'}`,
+          channel: 'email',
+          status: 'queued',
+          reference_type: 'ipi_request',
+          reference_id: ipi_request_id,
+        });
+
+        await supabase.from('audit_logs').insert({
+          actor_id: user.id,
+          action: 'ipi_rejected',
+          record_type: 'ipi_request',
+          record_id: ipi_request_id,
+          new_data: { reason: reason || 'Not specified' },
+        });
+      }
+
+      return new Response(JSON.stringify({ status: 'success', message: 'IPI request rejected.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // --- REVIEW DISPUTE ---
+    if (action === 'review_dispute') {
+      const { dispute_id, new_status, resolution } = body;
+      if (!dispute_id) throw new Error('dispute_id is required.');
+      if (!new_status) throw new Error('new_status is required.');
+
+      const validStatuses = ['under_review', 'mediation', 'arbitration', 'resolved', 'dismissed'];
+      if (!validStatuses.includes(new_status)) throw new Error('Invalid dispute status.');
+
+      const now = new Date().toISOString();
+      const updates: Record<string, unknown> = { status: new_status };
+      if (resolution) updates.resolution = resolution;
+      if (new_status === 'resolved' || new_status === 'dismissed') {
+        updates.resolved_by = user.id;
+        updates.resolved_at = now;
+      }
+
+      const { error } = await supabase
+        .from('disputes')
+        .update(updates)
+        .eq('id', dispute_id);
+
+      if (error) throw new Error(error.message);
+
+      const { data: dispute } = await supabase
+        .from('disputes')
+        .select('filed_by, dispute_type')
+        .eq('id', dispute_id)
+        .maybeSingle();
+
+      if (dispute) {
+        await supabase.from('notifications').insert({
+          user_id: dispute.filed_by,
+          type: 'dispute_updated',
+          title: `Dispute ${new_status.replace(/_/g, ' ')}`,
+          message: `Your ${dispute.dispute_type} dispute has been updated to: ${new_status.replace(/_/g, ' ')}.${resolution ? ` Resolution: ${resolution}` : ''}`,
+          channel: 'email',
+          status: 'queued',
+          reference_type: 'dispute',
+          reference_id: dispute_id,
+        });
+
+        await supabase.from('audit_logs').insert({
+          actor_id: user.id,
+          action: 'dispute_reviewed',
+          record_type: 'dispute',
+          record_id: dispute_id,
+          new_data: { status: new_status, resolution },
+        });
+      }
+
+      return new Response(JSON.stringify({ status: 'success', message: `Dispute updated to ${new_status}.` }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // --- ARTIST APPROVE LOCK ---
+    if (action === 'artist_approve_lock') {
+      const { lock_id } = body;
+      if (!lock_id) throw new Error('lock_id is required.');
+
+      const { data: lockApproval } = await supabase
+        .from('lock_approvals')
+        .select('*')
+        .eq('id', lock_id)
+        .maybeSingle();
+
+      if (!lockApproval) throw new Error('Lock approval record not found.');
+      if (!lockApproval.producer_approved) throw new Error('Producer has not initiated this lock yet.');
+      if (lockApproval.artist_approved) throw new Error('Artist has already approved this lock.');
+
+      const now = new Date().toISOString();
+      const hash = `sha256-artist-${lock_id}-${Date.now()}`;
+
+      const { error } = await supabase
+        .from('lock_approvals')
+        .update({
+          artist_approved: true,
+          artist_approved_at: now,
+          artist_approval_hash: hash,
+          artist_id: user.id,
+        })
+        .eq('id', lock_id);
+
+      if (error) throw new Error(error.message);
+
+      // Update the record's approval_status to pending_association_approval
+      const tableName = lockApproval.record_type === 'catalog_entry' ? 'catalog_entries' : 'contracts';
+      await supabase
+        .from(tableName)
+        .update({ approval_status: 'pending_association_approval' })
+        .eq('id', lockApproval.record_id);
+
+      // Notify producer
+      const { data: record } = await supabase
+        .from(tableName)
+        .select('song_title, producer_id, producer_profiles(user_id)')
+        .eq('id', lockApproval.record_id)
+        .maybeSingle();
+
+      if (record) {
+        const producerUserId = (record.producer_profiles as any)?.user_id;
+        if (producerUserId) {
+          await supabase.from('notifications').insert({
+            user_id: producerUserId,
+            type: 'artist_approved_lock',
+            title: 'Artist approved your lock request',
+            message: `The artist has approved the lock on "${record.song_title || 'your record'}". Waiting for PAEAM Association to finalize.`,
+            channel: 'email',
+            status: 'queued',
+            reference_type: 'lock_approval',
+            reference_id: lock_id,
+          });
+        }
+      }
+
+      await supabase.from('audit_logs').insert({
+        actor_id: user.id,
+        action: 'artist_approved_lock',
+        record_type: lockApproval.record_type,
+        record_id: lockApproval.record_id,
+        new_data: { lock_id, artist_approved: true, approved_at: now },
+      });
+
+      return new Response(JSON.stringify({ status: 'success', message: 'Artist approval recorded. Waiting for PAEAM Association to finalize.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // --- GET PENDING COUNTS ---
     if (action === 'pending_counts') {
       const { count: pendingProducers } = await supabase
@@ -508,12 +778,12 @@ Deno.serve(async (req: Request) => {
       const { count: pendingSongs } = await supabase
         .from('catalog_entries')
         .select('*', { count: 'exact', head: true })
-        .eq('approval_status', 'pending');
+        .in('approval_status', ['pending', 'pending_admin_approval']);
 
       const { count: pendingContracts } = await supabase
         .from('contracts')
         .select('*', { count: 'exact', head: true })
-        .eq('approval_status', 'pending');
+        .in('approval_status', ['pending', 'pending_admin_approval']);
 
       const { count: pendingLocks } = await supabase
         .from('lock_approvals')
@@ -527,12 +797,24 @@ Deno.serve(async (req: Request) => {
         .select('*', { count: 'exact', head: true })
         .eq('status', 'bank_transfer_pending');
 
+      const { count: pendingIpiRequests } = await supabase
+        .from('ipi_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
+
+      const { count: pendingDisputes } = await supabase
+        .from('disputes')
+        .select('*', { count: 'exact', head: true })
+        .in('status', ['filed', 'pending_admin_review']);
+
       return new Response(JSON.stringify({
         pendingProducers: pendingProducers || 0,
         pendingSongs: pendingSongs || 0,
         pendingContracts: pendingContracts || 0,
         pendingLocks: pendingLocks || 0,
         pendingBankTransfers: pendingBankTransfers || 0,
+        pendingIpiRequests: pendingIpiRequests || 0,
+        pendingDisputes: pendingDisputes || 0,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

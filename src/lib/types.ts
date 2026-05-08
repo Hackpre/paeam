@@ -1,18 +1,19 @@
 export type UserRole = 'super_admin' | 'paeam_admin' | 'moderator' | 'producer' | 'artist' | 'viewer' | 'auditor';
 export type MembershipStatus = 'trial' | 'active' | 'grace' | 'suspended' | 'bank_transfer_pending';
 export type VerificationStatus = 'pending' | 'verified' | 'rejected' | 'suspended';
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'locked';
+export type ApprovalStatus = 'pending' | 'pending_admin_approval' | 'approved' | 'rejected' | 'locked' | 'pending_artist_approval' | 'pending_association_approval' | 'fully_locked';
 export type PaymentType = 'membership' | 'late_renewal' | 'contract_registration' | 'royalty_distribution';
 export type PaymentStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'refunded' | 'bank_transfer_pending';
 export type PaymentMethod = '' | 'airtel_money' | 'tnm_mpamba' | 'national_bank' | 'card';
 export type ContractType = 'exclusive' | 'non-exclusive' | 'work-for-hire' | 'licensing' | 'distribution';
 export type DisputeType = 'ownership' | 'royalty' | 'copyright' | 'contract_breach' | 'other';
-export type DisputeStatus = 'filed' | 'under_review' | 'mediation' | 'arbitration' | 'resolved' | 'dismissed';
+export type DisputeStatus = 'filed' | 'pending_admin_review' | 'under_review' | 'mediation' | 'arbitration' | 'resolved' | 'dismissed';
 export type RenewalOption = 'none' | 'auto' | 'manual';
 export type OwnershipStatus = 'owned' | 'co-owned' | 'licensed' | 'work-for-hire';
 export type FileType = 'master_wav' | 'master_mp3' | 'instrumental' | 'contract_pdf' | 'split_sheet_pdf' | 'session_file' | 'artwork' | 'copyright_certificate' | 'other';
 export type RecordType = 'catalog_entry' | 'contract';
 export type RecipientRole = 'producer' | 'artist' | 'songwriter' | 'publisher' | 'other';
+export type IpiRequestStatus = 'pending' | 'approved' | 'rejected';
 
 export interface ProducerProfile {
   id: string;
@@ -69,6 +70,7 @@ export interface CatalogEntry {
   admin_approved_by: string | null;
   admin_approved_at: string | null;
   rejection_reason: string;
+  rejection_date: string | null;
   sync_rights_pct: number;
   created_at: string;
   updated_at: string;
@@ -109,6 +111,7 @@ export interface Contract {
   admin_approved_by: string | null;
   admin_approved_at: string | null;
   rejection_reason: string;
+  rejection_date: string | null;
   template_id: string | null;
   renewal_option: RenewalOption;
   created_at: string;
@@ -153,6 +156,8 @@ export interface LockApproval {
   association_approval_hash: string;
   is_fully_locked: boolean;
   locked_at: string | null;
+  lock_initiated_at: string | null;
+  lock_completed_at: string | null;
   unlock_request_reason: string;
   unlock_requested_by: string | null;
   created_at: string;
@@ -243,6 +248,19 @@ export interface IpiApplication {
   notes: string;
   reviewed_by: string | null;
   reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface IpiRequest {
+  id: string;
+  producer_id: string;
+  requested_by: string;
+  requested_ipi: string;
+  status: IpiRequestStatus;
+  assigned_ipi: string | null;
+  admin_approved_at: string | null;
+  admin_approved_by: string | null;
+  rejection_reason: string | null;
   created_at: string;
 }
 

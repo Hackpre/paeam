@@ -50,10 +50,28 @@ const FILE_TYPE_LABELS: Record<FileType, string> = {
 
 function ApprovalBadge({ status, rejectionReason }: { status: ApprovalStatus; rejectionReason?: string }) {
   switch (status) {
+    case 'fully_locked':
+      return (
+        <span className="inline-flex items-center gap-1 text-xs text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2.5 py-1 rounded-full">
+          <Lock size={12} /> Fully Locked - Immutable
+        </span>
+      );
     case 'locked':
       return (
         <span className="inline-flex items-center gap-1 text-xs text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2.5 py-1 rounded-full">
-          <Lock size={12} /> Locked - Immutable
+          <Lock size={12} /> Locked
+        </span>
+      );
+    case 'pending_association_approval':
+      return (
+        <span className="inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-full">
+          <Shield size={12} /> Awaiting PAEAM Association
+        </span>
+      );
+    case 'pending_artist_approval':
+      return (
+        <span className="inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-full">
+          <Music size={12} /> Awaiting Artist Approval
         </span>
       );
     case 'approved':
@@ -68,11 +86,17 @@ function ApprovalBadge({ status, rejectionReason }: { status: ApprovalStatus; re
           <XCircle size={12} /> Rejected by Admin
         </span>
       );
+    case 'pending_admin_approval':
+      return (
+        <span className="inline-flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1 rounded-full">
+          <Clock size={12} /> Pending Admin Approval
+        </span>
+      );
     case 'pending':
     default:
       return (
         <span className="inline-flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1 rounded-full">
-          <Clock size={12} /> Pending Admin Approval
+          <Clock size={12} /> Pending
         </span>
       );
   }
@@ -289,7 +313,10 @@ export default function Catalog() {
         producer_approved: true,
         producer_approved_at: new Date().toISOString(),
         producer_approval_hash: hash,
+        lock_initiated_at: new Date().toISOString(),
       });
+      // Update the entry's approval status to pending_artist_approval
+      await supabase.from('catalog_entries').update({ approval_status: 'pending_artist_approval' }).eq('id', entryId);
       setMessage({ type: 'success', text: 'Three-way lock initiated. Awaiting artist and association approval.' });
       loadEntries();
     } catch (err) {
@@ -885,8 +912,8 @@ export default function Catalog() {
                       </div>
                     )}
 
-                    {/* Lock Button */}
-                    {!entry.is_locked && (
+                    {/* Lock Button - only when approved and not locked */}
+                    {!entry.is_locked && entry.approval_status === 'approved' && (
                       <div className="pt-2 border-t border-neutral-800">
                         <button
                           onClick={() => handleInitiateLock(entry.id)}

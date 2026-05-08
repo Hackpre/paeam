@@ -82,6 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setProfile(null);
     setRoles([]);
+    localStorage.removeItem('paeam_user');
+    localStorage.removeItem('paeam_paid');
+    localStorage.removeItem('paeam_token');
+    localStorage.removeItem('paeam_session');
+    localStorage.removeItem('paeam_payment_status');
+    sessionStorage.clear();
   };
 
   const refreshProfile = async () => {

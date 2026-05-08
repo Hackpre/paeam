@@ -82,61 +82,52 @@ export default function LockApprovals() {
   const handleApprove = async (approval: LockApproval, role: 'producer' | 'artist' | 'association') => {
     setApproving(`${approval.id}-${role}`);
     try {
-      const hash = await generateContentHash(approval.record_id + role + Date.now());
-
-      const updates =
-        role === 'producer'
-          ? {
-              producer_approved: true,
-              producer_approved_at: new Date().toISOString(),
-              producer_approval_hash: hash,
-            }
-          : role === 'artist'
-            ? {
-                artist_approved: true,
-                artist_approved_at: new Date().toISOString(),
-                artist_approval_hash: hash,
-              }
-            : {
-                association_approved: true,
-                association_approved_at: new Date().toISOString(),
-                association_approval_hash: hash,
-              };
-
-      const producerApproved = role === 'producer' ? true : approval.producer_approved;
-      const artistApproved = role === 'artist' ? true : approval.artist_approved;
-      const associationApproved = role === 'association' ? true : approval.association_approved;
-      const fullyLocked = producerApproved && artistApproved && associationApproved;
-
-      const { error } = await supabase
-        .from('lock_approvals')
-        .update({
-          ...updates,
-          is_fully_locked: fullyLocked,
-          locked_at: fullyLocked ? new Date().toISOString() : null,
-        })
-        .eq('id', approval.id);
-
-      if (error) {
-        setMessage({ type: 'error', text: error.message });
-        return;
-      }
-
-      if (fullyLocked) {
-        const tableName = approval.record_type === 'catalog_entry' ? 'catalog_entries' : 'contracts';
-        await supabase
-          .from(tableName)
-          .update({ is_locked: true, approval_status: 'locked' })
-          .eq('id', approval.record_id);
-
-        await supabase.from('audit_logs').insert({
-          actor_id: user?.id || '',
-          action: 'lock_completed',
-          record_type: approval.record_type,
-          record_id: approval.record_id,
-          new_data: { fully_locked: true, locked_at: new Date().toISOString() },
+      // Use edge function for artist and association approvals
+      if (role === 'artist') {
+        const { data: { session } } = await supabase.auth.getSession();
+        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-actions`;
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ action: 'artist_approve_lock', lock_id: approval.id }),
         });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Action failed.');
+      } else if (role === 'association') {
+        const { data: { session } } = await supabase.auth.getSession();
+        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-actions`;
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ action: 'finalize_lock', lock_id: approval.id }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Action failed.');
       } else {
+        // Producer approval - direct update
+        const hash = await generateContentHash(approval.record_id + role + Date.now());
+        const { error } = await supabase
+          .from('lock_approvals')
+          .update({
+            producer_approved: true,
+            producer_approved_at: new Date().toISOString(),
+            producer_approval_hash: hash,
+            lock_initiated_at: new Date().toISOString(),
+          })
+          .eq('id', approval.id);
+
+        if (error) throw new Error(error.message);
+
+        // Update record status to pending_artist_approval
+        const tableName = approval.record_type === 'catalog_entry' ? 'catalog_entries' : 'contracts';
+        await supabase.from(tableName).update({ approval_status: 'pending_artist_approval' }).eq('id', approval.record_id);
+
         await supabase.from('audit_logs').insert({
           actor_id: user?.id || '',
           action: 'lock_approved',
@@ -148,13 +139,13 @@ export default function LockApprovals() {
 
       setMessage({
         type: 'success',
-        text: fullyLocked
-          ? 'Record fully locked with three-way approval.'
+        text: role === 'association'
+          ? 'Three-Way Lock finalized. Record is now immutable.'
           : `${role.charAt(0).toUpperCase() + role.slice(1)} approval recorded. Waiting for remaining approvals.`,
       });
       loadApprovals();
-    } catch (err) {
-      setMessage({ type: 'error', text: 'An unexpected error occurred while processing approval.' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'An unexpected error occurred.' });
     } finally {
       setApproving(null);
     }

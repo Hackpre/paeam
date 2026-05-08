@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  Music,
   Percent,
   Globe,
   Clock,
@@ -258,13 +259,16 @@ export default function Contracts() {
 
   const handleInitiateLock = async (contractId: string) => {
     try {
+      const hash = await generateContentHash(contractId + 'producer-' + Date.now());
       await supabase.from('lock_approvals').insert({
         record_type: 'contract',
         record_id: contractId,
         producer_approved: true,
         producer_approved_at: new Date().toISOString(),
-        producer_approval_hash: await generateContentHash(contractId + 'producer'),
+        producer_approval_hash: hash,
+        lock_initiated_at: new Date().toISOString(),
       });
+      await supabase.from('contracts').update({ approval_status: 'pending_artist_approval' }).eq('id', contractId);
       setMessage({ type: 'success', text: 'Lock request initiated for contract. Awaiting artist and association approval.' });
       loadData();
     } catch (err) {
@@ -288,10 +292,28 @@ export default function Contracts() {
 
   const approvalBadge = (status: Contract['approval_status'], rejectionReason?: string) => {
     switch (status) {
+      case 'fully_locked':
+        return (
+          <span className="flex items-center gap-1 text-xs text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2 py-1 rounded-full">
+            <Lock size={12} /> Fully Locked - Immutable
+          </span>
+        );
       case 'locked':
         return (
           <span className="flex items-center gap-1 text-xs text-gold-400 bg-gold-500/10 border border-gold-500/20 px-2 py-1 rounded-full">
-            <Lock size={12} /> Locked - Immutable
+            <Lock size={12} /> Locked
+          </span>
+        );
+      case 'pending_association_approval':
+        return (
+          <span className="flex items-center gap-1 text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-full">
+            <Shield size={12} /> Awaiting PAEAM Association
+          </span>
+        );
+      case 'pending_artist_approval':
+        return (
+          <span className="flex items-center gap-1 text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-full">
+            <Music size={12} /> Awaiting Artist Approval
           </span>
         );
       case 'approved':
@@ -306,10 +328,16 @@ export default function Contracts() {
             <XCircle size={12} /> Rejected by Admin
           </span>
         );
-      default:
+      case 'pending_admin_approval':
         return (
           <span className="flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2 py-1 rounded-full">
             <Clock size={12} /> Pending Admin Approval
+          </span>
+        );
+      default:
+        return (
+          <span className="flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2 py-1 rounded-full">
+            <Clock size={12} /> Pending
           </span>
         );
     }
@@ -810,8 +838,8 @@ export default function Contracts() {
                     )}
                   </div>
 
-                  {/* Lock Button */}
-                  {!contract.is_locked && (
+                  {/* Lock Button - only when approved and not locked */}
+                  {!contract.is_locked && contract.approval_status === 'approved' && (
                     <button
                       type="button"
                       onClick={() => handleInitiateLock(contract.id)}
